@@ -23,7 +23,23 @@ Existing digital-health interventions in the region cluster into two categories,
 
 This project's contribution is that specific combination: **voice-native accessibility + LLM conversation + rules-based safety layer + human-closed ticketing loop**, with an explicit fallback path for low-resource local languages (see §5).
 
-## 3. System Architecture
+## 3. Competitive Landscape
+
+This is an active space, not an untested idea — which is a strength, not a weakness, for a hackathon pitch. It means the category is validated; the differentiation has to be specific.
+
+| Player | Region | Channel | What it does |
+|---|---|---|---|
+| **Sauti Care** | Kenya | Voice-first AI triage | Deployed in a hospital setting; reported 87.3% triage concordance and 89.7% top-3 diagnostic accuracy across 10,041 encounters over 22 weeks [8] |
+| **Penda Health — AI Consult** | Kenya | Clinician-facing decision support (not patient-facing voice) | Studied in *Nature*; reported 16% reduction in diagnostic errors and 13% reduction in treatment errors across tens of thousands of visits [9] |
+| **Tabibu Health** | Kenya | App-based symptom checker | English/Swahili + other local languages, pharmacy/product finder, emergency routing to 999/112, answers grounded in Mayo Clinic/CDC sources [10] |
+| **Rocket Health** | Uganda | Phone call, USSD (\*280#), SMS | 24/7 medical call center since 2012, ~40,000 customers, doctors handling phone consultations; reportedly building AI-assisted call triage [11] |
+| **Jacaranda Health — PROMPTS** | Kenya | Two-way SMS | Maternal health messaging in Swahili, reaching hundreds of thousands of women [12] |
+| **Ada Health** | Global | App-based symptom checker | Free, well-studied, widely used benchmark for general-purpose triage [13] |
+| **Gates Foundation + OpenAI — "Horizon1000"** | Rwanda (pan-African rollout planned) | Clinic-deployed AI tools | Up to $50M committed for AI-assisted intake, triage, follow-up, referrals, and local-language medical info across 1,000 clinics by 2028 [14] |
+
+**Where this project still differs:** none of the above foreground a **feature-phone-native, DTMF-fallback path for low-resource local languages** (e.g. Luganda, Runyankole) as a first-class design constraint rather than a future roadmap item. Sauti Care and Tabibu Health assume a smartphone/app or a hospital-grade voice pipeline; Rocket Health's triage is human-staffed, not AI-driven at the call layer; PROMPTS is SMS, not voice. This project's contribution is narrow and specific: a working demonstration that the *same* rules-based triage engine can be reached either through full LLM conversation (English/Swahili) or through a pre-recorded, keypress-only menu (any other local language, any phone) — with no retraining required to add a new language.
+
+## 4. System Architecture
 
 ```mermaid
 flowchart TD
@@ -65,7 +81,7 @@ flowchart TD
 | Backend / data store | Django + PostgreSQL | Stores each call as a "ticket": symptoms, tier, status |
 | Dashboard | Next.js/React | Clinic/CHW view of open tickets, sorted by urgency |
 
-## 4. Data Flow (per call)
+## 5. Data Flow (per call)
 
 1. Caller dials in → selects language via keypress.
 2. **English/Swahili:** free speech → Whisper transcription → LLM extracts symptoms + asks follow-up if needed.
@@ -75,19 +91,19 @@ flowchart TD
 5. Emergency/Urgent tickets trigger a routing action (nearest facility lookup + CHW alert); Self-care tickets get a spoken advice message.
 6. Dashboard updates in real time; a human at the clinic/CHW level reviews and closes the ticket.
 
-## 5. Local-Language Handling Strategy
+## 6. Local-Language Handling Strategy
 
 - **English/Swahili:** full LLM pipeline (free speech understood), since STT/TTS coverage is reasonably reliable for these.
 - **Other local languages (e.g., Luganda, Runyankole):** ASR/TTS quality is unreliable for these languages, so the system falls back to a **pre-recorded audio menu + DTMF keypress** — no live transcription or synthesis required. A native speaker records ~15–20 short symptom prompts ahead of time; the same rules engine processes the keypress responses.
 - This is a deliberate architectural choice, not a limitation to hide: it means **adding a new language only requires recording a prompt set**, not retraining or sourcing a new ASR/TTS model — which is the realistic path to genuine multi-language coverage in this domain today.
 
-## 6. Safety & Scope Notes
+## 7. Safety & Scope Notes
 
 - The system never states a diagnosis. Output is limited to an urgency tier and a routing action.
 - The rules engine (not the LLM) makes the urgency call, so the logic can be reviewed, tested, and audited independently of model behavior.
 - Every ticket is closed by a human — the system augments, not replaces, the CHW/clinic decision.
 
-## 7. References
+## 8. References
 
 [1] Shortage of healthcare workers in developing countries — Africa. PubMed. https://pubmed.ncbi.nlm.nih.gov/19484878/
 
@@ -103,9 +119,23 @@ flowchart TD
 
 [7] Addressing Africa's healthcare worker shortage. MamaOpe. https://mamaope.com/news/healthcare-worker-shortage-addressing/
 
+[8] Sauti Care — Voice-First AI Healthcare Triage, Research. https://www.sauticare.com/research
+
+[9] What Makes a Health AI Actually Built for Africa? (Penda Health AI Consult results). DEV Community. https://dev.to/xander-aj3/what-makes-a-health-ai-actually-built-for-africa-4ka9
+
+[10] What Makes a Health AI Actually Built for Africa? (Tabibu Health). DEV Community. https://dev.to/xander-aj3/what-makes-a-health-ai-actually-built-for-africa-4ka9
+
+[11] Uganda's Rocket Health raises $5M to scale telemedicine across Africa. TechCrunch. https://techcrunch.com/2022/03/07/ugandas-rocket-health-raises-5m-in-round-led-by-creadev-to-scale-telemedicine-across-africa
+
+[12] What Makes a Health AI Actually Built for Africa? (Jacaranda Health PROMPTS). DEV Community. https://dev.to/xander-aj3/what-makes-a-health-ai-actually-built-for-africa-4ka9
+
+[13] What Makes a Health AI Actually Built for Africa? (Ada Health). DEV Community. https://dev.to/xander-aj3/what-makes-a-health-ai-actually-built-for-africa-4ka9
+
+[14] Gates Foundation, OpenAI launch $50M AI health initiative targeting 1,000 clinics in Africa. GeekWire. https://www.geekwire.com/2026/gates-foundation-openai-launch-50m-ai-health-initiative-targeting-1000-clinics-in-africa/
+
 ---
 
-## 8. Next Steps / Build Order
+## 9. Next Steps / Build Order
 
 - [ ] Stand up Django + Postgres ticket schema
 - [ ] Wire Twilio/Africa's Talking sandbox voice number
