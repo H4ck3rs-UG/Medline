@@ -144,3 +144,106 @@ flowchart TD
 - [ ] Record local-language prompt set + build DTMF menu path
 - [ ] Build Next.js dashboard (ticket list, urgency sort, status update)
 - [ ] End-to-end demo run: live call → ticket → dashboard update
+
+---
+
+## 10. Triage Harness & Rules Engine (`triage/` package)
+
+This package covers boxes **E** (the LLM's directives and guardrails) and **G** (the rules engine) of the architecture. It's plain Python with no Django or telephony dependency, and it doesn't depend on any particular LLM provider.
+
+```bash
+pip install -e ".[dev]"
+pytest -q                      # full test suite
+python examples/cli_demo.py    # scripted calls: normal, drift, injection, emergency
+```
+
+### How the model is kept on task
+
+| Layer | Where | What it does |
+|---|---|---|
+| System prompt | `triage/prompts.py` | Intake-only role. The model never diagnoses, never names or doses medicine, and never judges urgency. Replies are short and spoken. It must answer in strict JSON using a closed symptom vocabulary. |
+| Caller speech as data | `prompts.wrap_utterance` | Caller words are wrapped in `<caller_utterance>` tags, so "ignore your rules…" is treated as off-topic, not as an instruction. |
+| Input guard | `guardrails.check_input` | Danger-sign keywords (English + Swahili) close the call as an **emergency without calling the model**. A danger sign the model picks up later ends the call the same way. |
+| Output guard | `guardrails.check_output` | Rejects bad JSON, diagnoses, medication advice, urgency claims, prompt leaks, markdown and over-long replies. A rejected reply gets one corrective retry. If that also fails, a canned safe line is spoken instead, and the valid symptom data is kept. |
+| Drift policy | `harness.IntakeSession` | The 1st off-topic turn gets the model's own redirect and the 2nd a firmer canned redirect. The 3rd ends the call with a health-worker callback. Calls also end after at most 6 turns. |
+| Rules engine | `triage/rules/` | The urgency tier comes **only** from the deterministic rules, never from the model. Every matched rule id is stored for audit. |
+| Fail safe | `rules.py` | If there's no usable data, the symptoms aren't recognised, or the intake didn't finish (hang-up, drift, turn cap, model failure), the call goes to Urgent / CHW callback, never to self-care. |
+
+### Integration
+
+```python
+from triage import IntakeSession, decide, report_from_keypresses
+
+class MyLLM:                                    # wrap any provider
+    def complete(self, system: str, messages: list[dict]) -> str: ...
+
+session = IntakeSession(MyLLM(), clinic_name="the community health line")
+tts(session.opening_line())
+while True:
+    result = session.handle_utterance(stt(caller_audio))
+    tts(result.reply_text)
+    if result.done:                             # result.emergency -> trigger routing now
+        break
+ticket = session.finalize().to_dict()           # report, decision, closed_reason, transcript -> Postgres
+# If the caller hangs up early, call session.finalize() anyway.
+
+# Local-language keypress path uses the same engine:
+decision = decide(report_from_keypresses({"age_group": "2", "fever": "1", "duration": "3"}))
+```
+
+`triage.dtmf.MENU` holds the question script for recording the local-language prompts.
+
+### Testing with a local model
+
+`triage.adapters.OllamaClient` runs the harness against a model served by [Ollama](https://ollama.com). It uses no extra Python dependencies. The request pins the output to the `LLMTurn` JSON schema, so the model can't return malformed JSON and retries are rare.
+
+```bash
+ollama pull qwen3:8b
+python examples/local_chat.py                            # type as the caller; shows latency per turn
+python examples/local_chat.py --model gemma3:12b --omit-think
+```
+
+**Recommended model for a 16 GB GPU (the team's Alienware desktop, RTX 4080 Super):**
+
+| Model | VRAM (Q4) | Why |
+|---|---|---|
+| **`qwen3:8b`** (default) | ~5–6 GB | Fast. It follows JSON and system rules well and supports Swahili. It leaves room for Whisper on the same GPU. The adapter sends `think: false` to turn off its reasoning mode, which would otherwise add seconds to every turn. |
+| `gemma3:12b` | ~8 GB | Try it if Swahili replies from Qwen are weak. It's stronger at multilingual and a bit slower. Run it with `--omit-think`. |
+
+Avoid reasoning models and anything above ~14B parameters. Reasoning adds latency, and larger models crowd out Whisper (large-v3-turbo needs ~2–3 GB).
+
+### Voice test with Whisper
+
+`examples/voice_chat.py` tests the full voice loop on one PC, before the phone line exists. You talk into the mic, `faster-whisper` transcribes it on the GPU, the harness and local model answer, and the reply is read aloud.
+
+**What's needed**
+
+| Piece | What | Notes |
+|---|---|---|
+| Speech-to-text (default) | [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper), model `large-v3-turbo`, float16 | About 2–3 GB VRAM, so it fits alongside `qwen3:8b` on 16 GB. Tuned for speed: greedy decoding (`beam_size=1`), silence trimming (`vad_filter`), fixed language (no auto-detect). |
+| CUDA libraries | cuBLAS 12 + cuDNN 9 | `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`. The script adds their folders to the DLL path itself, so no manual PATH editing is needed on Windows. |
+| Speech-to-text (`--asr sunflower`) | Sunbird AI's [SunflowerASR](https://huggingface.co/Sunbird/SunflowerASR-51-african-languages), run with `transformers` + PyTorch (CUDA) | Whisper large-v3 fine-tuned by Sunbird AI (Uganda) on 7,400+ hours of African speech, so it handles African-accented English and Swahili better. About 3–4 GB VRAM, and slower than `large-v3-turbo`. |
+| Microphone | `sounddevice` + `numpy` | 16 kHz mono, push-to-talk. |
+| Text-to-speech | `pyttsx3` | Uses the offline Windows voices. It's only a stand-in for the phone provider's TTS. Use `--no-tts` to print replies instead. |
+| LLM | Ollama + `qwen3:8b` | See above. |
+
+```bash
+pip install -e ".[voice]"
+pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+ollama pull qwen3:8b
+python examples/voice_chat.py                    # English
+python examples/voice_chat.py --language sw      # Swahili
+python examples/voice_chat.py --device cpu --whisper-model small   # no GPU
+
+# SunflowerASR instead of Whisper
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+pip install transformers
+python examples/voice_chat.py --asr sunflower
+python examples/voice_chat.py --asr sunflower --language sw
+```
+
+SunflowerASR can also transcribe Luganda, Runyankole and other Ugandan languages, but `qwen3:8b` understands them poorly. For now the local-language path stays on the keypad menu, as §6 describes. A later version could put a translation step between SunflowerASR and the harness.
+
+Each turn prints how long speech-to-text and the LLM took, and the ticket is printed at the end. Whisper's Swahili is usable but weaker than its English, and it doesn't support Luganda or Runyankole. Those languages go through the keypad path (`triage/dtmf.py`).
+
+> **Clinical content is placeholder.** The rules in `triage/rules/rules.py` are loosely modelled on WHO IMCI danger signs for the demo. The Swahili red-flag phrases and all canned lines need review by a clinician and native speakers before any real use.
