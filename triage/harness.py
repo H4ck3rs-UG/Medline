@@ -42,12 +42,15 @@ class IntakeSession:
         llm: LLMClient,
         *,
         clinic_name: str = "the community health line",
+        language: str = "en",
         max_turns: int = 6,
         max_off_topic: int = 3,
         max_model_failures: int = 2,
     ):
         self.llm = llm
-        self.system_prompt = prompts.build_system_prompt(clinic_name)
+        # Language the model and the canned lines speak ("en" or "sw").
+        self.language = prompts.normalise_language(language)
+        self.system_prompt = prompts.build_system_prompt(clinic_name, self.language)
         self.max_turns = max_turns
         self.max_off_topic = max_off_topic
         self.max_model_failures = max_model_failures
@@ -66,20 +69,36 @@ class IntakeSession:
         return self.closed_reason is not None
 
     def opening_line(self) -> str:
-        self._transcript.append({"role": "assistant", "content": prompts.GREETING})
-        return prompts.GREETING
+        greeting = prompts.line("greeting", self.language)
+        self._transcript.append({"role": "assistant", "content": greeting})
+        return greeting
 
-    def handle_utterance(self, text: str) -> TurnResult:
+    def handle_utterance(self, text: str, *, original_text: str | None = None) -> TurnResult:
+        """Handle one caller turn.
+
+        ``original_text`` is what the caller actually said when ``text`` is a
+        machine translation of it. It is scanned for danger signs as well, so a
+        red flag the translation dropped still closes the call as an emergency.
+        """
         if self.done:
             return self._result(self._closing_line(self.finalize()))
 
         self.turns += 1
         checked = check_input(text)
-        self._transcript.append({"role": "caller", "content": checked.text})
+        entry = {"role": "caller", "content": checked.text}
+        red_flags, phrases = list(checked.red_flags), list(checked.phrases)
+        if original_text is not None:
+            original = check_input(original_text)
+            entry = {"role": "caller", "content": original.text, "translation": checked.text}
+            for symptom, phrase in zip(original.red_flags, original.phrases):
+                if symptom not in red_flags:
+                    red_flags.append(symptom)
+                    phrases.append(phrase)
+        self._transcript.append(entry)
 
-        if checked.red_flags:
-            self.report.add_symptoms(checked.red_flags)
-            self.report.red_flag_phrases.extend(checked.phrases)
+        if red_flags:
+            self.report.add_symptoms(red_flags)
+            self.report.red_flag_phrases.extend(phrases)
             return self._close(CloseReason.RED_FLAG)
 
         user_content = prompts.wrap_utterance(checked.text)
@@ -92,7 +111,7 @@ class IntakeSession:
             self.model_failure_streak += 1
             if self.model_failure_streak >= self.max_model_failures:
                 return self._close(CloseReason.MODEL_FAILURE)
-            return self._speak(prompts.SAFE_REPLY)
+            return self._speak(prompts.line("safe_reply", self.language))
         self.model_failure_streak = 0
         self.report.merge(turn)
 
@@ -107,7 +126,7 @@ class IntakeSession:
             if self.off_topic_streak >= self.max_off_topic:
                 return self._close(CloseReason.OFF_TOPIC)
             if self.off_topic_streak > 1:
-                return self._speak(prompts.REDIRECT_FIRM, turn)
+                return self._speak(prompts.line("redirect_firm", self.language), turn)
 
         if turn.done:
             return self._close(CloseReason.COMPLETED)
@@ -130,8 +149,16 @@ class IntakeSession:
                 closed_reason=self.closed_reason,
                 turns=self.turns,
                 transcript=list(self._transcript),
+                language=self.language,
             )
         return self._outcome
+
+    def close(self, reason: CloseReason) -> TurnResult:
+        """End the call now for ``reason`` (e.g. a failure outside the model) and
+        return the closing line. Does nothing more if already closed."""
+        if self.done:
+            return self._result(self._closing_line(self.finalize()))
+        return self._close(reason)
 
     # --- internals ---
 
@@ -159,7 +186,7 @@ class IntakeSession:
             return None
         # The extraction validated; only the spoken reply was unsafe. Keep the data,
         # replace the words.
-        return salvage.model_copy(update={"reply": prompts.SAFE_REPLY})
+        return salvage.model_copy(update={"reply": prompts.line("safe_reply", self.language)})
 
     def _call(self, messages: list[Message]) -> _Attempt:
         try:
@@ -188,11 +215,10 @@ class IntakeSession:
         outcome.transcript.append({"role": "assistant", "content": line})
         return self._result(line)
 
-    @staticmethod
-    def _closing_line(outcome: IntakeOutcome) -> str:
+    def _closing_line(self, outcome: IntakeOutcome) -> str:
         if outcome.closed_reason == CloseReason.OFF_TOPIC:
-            return prompts.CLOSING_OFF_TOPIC
-        return prompts.CLOSING_BY_TIER[outcome.decision.tier]
+            return prompts.line("closing_off_topic", self.language)
+        return prompts.closing_line(outcome.decision.tier, self.language)
 
     def _result(self, line: str) -> TurnResult:
         outcome = self.finalize()

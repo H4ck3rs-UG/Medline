@@ -164,6 +164,7 @@ class IntakeOutcome(BaseModel):
     closed_reason: CloseReason
     turns: int
     transcript: list[dict[str, str]]
+    language: str = "en"  # language the caller was served in
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-safe dict, ready to store as a ticket."""

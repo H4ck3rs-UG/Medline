@@ -8,8 +8,10 @@ contract: bad JSON, a diagnosis, medication advice, an urgency judgement, a
 leaked prompt, or a reply too long or too formatted to speak.
 
 The keyword lists are intentionally broad: a false positive costs a retry or a
-health-worker callback, a false negative could cost much more. The Swahili
-phrases need review by a native speaker.
+health-worker callback, a false negative could cost much more. Both sides
+cover English and Swahili; the Swahili phrases need review by a native speaker.
+Other languages reach the model through ``triage.translation``, which runs these
+checks on the English translation as well.
 """
 
 from __future__ import annotations
@@ -67,7 +69,8 @@ RED_FLAG_PATTERNS: dict[Symptom, list[re.Pattern[str]]] = {
         r"\bgasping\b",
         r"\bchoking\b",
         r"\bhapumui\b",
-        r"\b(kushindwa|anashindwa|shida ya) kupumua\b",
+        r"\b(kushindwa|anashindwa|shida ya|hawezi|siwezi) kupumua\b",
+        r"\bkupumua kwa shida\b",
     ]),
     Symptom.CHEST_PAIN: _compile([
         r"\bchest pains?\b",
@@ -128,6 +131,11 @@ OUTPUT_RULES: dict[str, list[re.Pattern[str]]] = {
         r"meningitis|diabetes|hypertension|asthma|cancer|sepsis|dengue|measles|anaemia|anemia|"
         r"influenza|flu|infection|infected|ulcers?|\w+itis)\b",
         r"\btb\b",
+        # Swahili
+        r"\b(una|ana|mna|wana) (ugonjwa|maambukizi)\b" + _NOT_QUESTION,
+        r"\b(kifua kikuu|homa ya matumbo|homa ya uti wa mgongo|kipindupindu|kisukari|"
+        r"shinikizo la damu|pumu|saratani|surua|upungufu wa damu|maambukizi|nimonia|"
+        r"vidonda vya tumbo)\b",
     ]),
     "medication": _compile([
         r"\b\d+(\.\d+)?\s?(mg|mcg|ml|milligrams?|millilitres?|milliliters?)\b",
@@ -137,6 +145,12 @@ OUTPUT_RULES: dict[str, list[re.Pattern[str]]] = {
         r"\b(paracetamol|panadol|acetaminophen|ibuprofen|aspirin|amoxicillin|coartem|artemether|"
         r"antibiotics?|ors|oral rehydration)\b",
         r"\b(drink (plenty|lots|more)|get (some |plenty of )?rest|home remed\w*)\b",
+        # Swahili
+        r"\b(dozi|dawa ya kienyeji|dawa za kienyeji|kiuavijasumu|viuavijasumu)\b",
+        r"\b(kunywa|tumia|meza|nunua|mpe|chukua|anza)\b.{0,30}\b(dawa|vidonge|kidonge|tembe|"
+        r"sharubati|antibiotiki)\b",
+        r"\bkunywa maji (mengi|kwa wingi)\b",
+        r"\bpumzika\b",
     ]),
     "urgency": _compile([
         r"\bemergenc\w*",
@@ -150,6 +164,15 @@ OUTPUT_RULES: dict[str, list[re.Pattern[str]]] = {
         r"\b(call|get) (an )?ambulance\b",
         r"\b(you|they|he|she)('ll| will) be (fine|ok|okay|alright|all right)\b",
         r"\bself[- ]care\b",
+        # Swahili
+        r"\bdharura\b",
+        r"\b(si|ni) hatari\b" + _NOT_QUESTION,
+        r"\b(si|sio) (jambo )?(kubwa|mbaya)\b" + _NOT_QUESTION,
+        r"\busijali\b",
+        r"\b(nenda|mpeleke|kwenda|fika) (katika |kwenye )?(hospitali|kliniki|zahanati|kituo cha afya)\b"
+        + _NOT_QUESTION,
+        r"\b(ita|piga simu|pigia)\b.{0,15}\bambulansi\b",
+        r"\b(utapona|atapona|mtapona|utakuwa sawa|atakuwa sawa)\b",
     ]),
     "prompt_leak": _compile([
         r"\bsystem prompt\b",
@@ -157,6 +180,7 @@ OUTPUT_RULES: dict[str, list[re.Pattern[str]]] = {
         r"caller_utterance",
         r"\bas an ai\b",
         r"\bmy instructions\b",
+        r"\bmaelekezo yangu\b",
     ]),
     "formatting": _compile([
         r"(^|\n)\s*([-*#>]|\d+\.)\s",

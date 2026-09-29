@@ -13,6 +13,7 @@ dependencies = ["pydantic>=2"]
 [project.optional-dependencies]
 dev = ["pytest"]
 voice = ["faster-whisper>=1.1", "sounddevice", "numpy", "pyttsx3"]
+translate = ["transformers", "torch", "sentencepiece"]  # triage.translation.NLLBTranslator
 
 [tool.setuptools.packages.find]
 include = ["triage*"]
