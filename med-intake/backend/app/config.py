@@ -1,6 +1,8 @@
 """Settings. Ported from SavaWatch config.py -> medical intake."""
-import os
+import os, sys
 BASE = os.path.dirname(os.path.abspath(__file__))
+try: import triage  # noqa: F401  (pip install -e <repo root>)
+except ImportError: sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(BASE))))
 def _load_env():
     f = os.path.join(os.path.dirname(BASE), ".env")
     if not os.path.exists(f): return
@@ -21,3 +23,5 @@ LLM_MODEL=os.getenv("LLM_MODEL","")
 LLM_TIMEOUT=float(os.getenv("LLM_TIMEOUT","4"))
 PUBLIC_URL=os.getenv("PUBLIC_URL","").rstrip("/")
 VOICE_NAME=os.getenv("VOICE_NAME","woman")
+AUDIO_BASE_URL=os.getenv("AUDIO_BASE_URL","").rstrip("/")  # recorded clips, see triage.dtmf.recording_script
+RECORDED_LANGS={x.strip() for x in os.getenv("RECORDED_LANGS","lg,nyn").split(",") if x.strip()}

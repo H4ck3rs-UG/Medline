@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, Float
 from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import DB_URL
 from .triage_engine import triage
+from triage.rules.engine import decide
 from . import voice as V
 engine = create_engine(DB_URL, connect_args={"check_same_thread":False})
 Session = sessionmaker(bind=engine)
@@ -51,20 +52,23 @@ def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: st
     if isActive=="0": return Response(content="",media_type="application/xml")
     s=V.get(sessionId)
     if not s:
-        s,reply,act=V.start(callerNumber or "",sessionId or None)
-        return Response(content=V.render(reply,act),media_type="application/xml")
+        s,lines,act=V.start(callerNumber or "",sessionId or None)
+        return Response(content=V.render(lines,act),media_type="application/xml")
     text=None
     if recordingUrl:
         try: text=" ".join([]) or None
         except Exception: pass
-    tr,reply,act=V.turn(s,text=text,digits=dtmfDigits or None)
+    tr,lines,act=V.turn(s,text=text,digits=dtmfDigits or None)
     if act=="triage":
-        tier,reason,conf=triage(s["symptoms"],s["flags"])
-        db=Session(); t=Ticket(caller=s["phone"],lang=s["lang"],symptoms=",".join(s["symptoms"]),tier=tier,reason=reason,confidence=conf)
+        if "report" in s:  # keypad path: full rules engine over the menu answers
+            d=decide(s["report"]); tier=d.tier.value; reason="; ".join(d.reasons); conf=0
+            symptoms=[x.value for x in s["report"].symptoms]
+        else:
+            tier,reason,conf=triage(s["symptoms"],s["flags"]); symptoms=s["symptoms"]
+        db=Session(); t=Ticket(caller=s["phone"],lang=s["lang"],symptoms=",".join(symptoms),tier=tier,reason=reason,confidence=conf)
         db.add(t); db.commit(); db.close()
-        msg=f"Ticket {t.id}, {tier}. {reason}." if tier!="self_care" else f"{tier}. Rest, fluids, seek care if worse."
-        return Response(content=V.render(msg,"hangup"),media_type="application/xml")
+        return Response(content=V.render([V.closing(s["lang"],tier)],"hangup"),media_type="application/xml")
     to="+256700300001" if act=="transfer" else ""
-    return Response(content=V.render(reply or "",act,to),media_type="application/xml")
+    return Response(content=V.render(lines or [],act,to),media_type="application/xml")
 @app.get("/health")
 def health(): return {"ok":True}
