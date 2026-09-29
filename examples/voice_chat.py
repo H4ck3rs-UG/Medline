@@ -12,6 +12,7 @@ Speech-to-text engines (--asr):
     ollama pull qwen3:8b
     python examples/voice_chat.py                        # English
     python examples/voice_chat.py --language sw          # Swahili
+    python examples/voice_chat.py --asr sunflower --language lg   # Luganda via translation
     python examples/voice_chat.py --device cpu --whisper-model small --compute-type int8
 
     # SunflowerASR also needs PyTorch with CUDA and transformers:
@@ -146,7 +147,12 @@ def main() -> None:
     parser.add_argument(
         "--compute-type", default=None, help="whisper only; default float16 on cuda, int8 on cpu"
     )
-    parser.add_argument("--language", default="en", help="en, sw, or auto")
+    parser.add_argument(
+        "--language",
+        default="en",
+        help="en, sw, or auto; lg (with --asr sunflower) goes through machine translation",
+    )
+    parser.add_argument("--translation-model", default="facebook/nllb-200-distilled-600M")
     parser.add_argument("--llm-model", default="qwen3:8b")
     parser.add_argument("--host", default="http://localhost:11434")
     parser.add_argument("--omit-think", action="store_true")
@@ -158,13 +164,25 @@ def main() -> None:
     import numpy as np
     import sounddevice as sd
 
-    from triage import IntakeSession
+    from triage import IntakeSession, TranslatingSession
     from triage.adapters import OllamaClient
+    from triage.prompts import LANGUAGE_NAMES
 
+    translate = args.language not in LANGUAGE_NAMES and args.language != "auto"
+    if translate and args.asr != "sunflower":
+        raise SystemExit(f"Whisper can't transcribe {args.language!r}; use --asr sunflower.")
     transcribe = load_transcriber(args, np)
 
     llm = OllamaClient(args.llm_model, args.host, think=None if args.omit_think else False)
-    session = IntakeSession(llm)
+    if translate:
+        from triage.translation import NLLBTranslator
+
+        print(f"Loading translation model {args.translation_model}...")
+        translator = NLLBTranslator(args.translation_model, device=0 if args.device == "cuda" else -1)
+        session = TranslatingSession(llm, translator, args.language)
+    else:
+        # With --language auto the canned lines stay in English.
+        session = IntakeSession(llm, language=args.language)
     speak(session.opening_line(), not args.no_tts)
 
     try:

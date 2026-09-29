@@ -96,6 +96,7 @@ flowchart TD
 - **English/Swahili:** full LLM pipeline (free speech understood), since STT/TTS coverage is reasonably reliable for these.
 - **Other local languages (e.g., Luganda, Runyankole):** ASR/TTS quality is unreliable for these languages, so the system falls back to a **pre-recorded audio menu + DTMF keypress** — no live transcription or synthesis required. A native speaker records ~15–20 short symptom prompts ahead of time; the same rules engine processes the keypress responses.
 - This is a deliberate architectural choice, not a limitation to hide: it means **adding a new language only requires recording a prompt set**, not retraining or sourcing a new ASR/TTS model — which is the realistic path to genuine multi-language coverage in this domain today.
+- **Experimental translation path:** `triage.translation.TranslatingSession` lets a caller speak a local language (e.g. Luganda via SunflowerASR). Their words are machine-translated to English for the harness, and replies are translated back. Danger signs are checked on both the original and the translated words, and a translation failure never leads to self-care. The keypad menu stays the default until the translations have been evaluated with native speakers.
 
 ## 7. Safety & Scope Notes
 
@@ -161,10 +162,10 @@ python examples/cli_demo.py    # scripted calls: normal, drift, injection, emerg
 
 | Layer | Where | What it does |
 |---|---|---|
-| System prompt | `triage/prompts.py` | Intake-only role. The model never diagnoses, never names or doses medicine, and never judges urgency. Replies are short and spoken. It must answer in strict JSON using a closed symptom vocabulary. |
+| System prompt | `triage/prompts.py` | Intake-only role. The model never diagnoses, never names or doses medicine, and never judges urgency. Replies are short and spoken, in the call's language (`IntakeSession(llm, language="sw")`). It must answer in strict JSON using a closed symptom vocabulary. Canned lines are kept per language in `prompts.CANNED`. |
 | Caller speech as data | `prompts.wrap_utterance` | Caller words are wrapped in `<caller_utterance>` tags, so "ignore your rules…" is treated as off-topic, not as an instruction. |
 | Input guard | `guardrails.check_input` | Danger-sign keywords (English + Swahili) close the call as an **emergency without calling the model**. A danger sign the model picks up later ends the call the same way. |
-| Output guard | `guardrails.check_output` | Rejects bad JSON, diagnoses, medication advice, urgency claims, prompt leaks, markdown and over-long replies. A rejected reply gets one corrective retry. If that also fails, a canned safe line is spoken instead, and the valid symptom data is kept. |
+| Output guard | `guardrails.check_output` | Rejects bad JSON, diagnoses, medication advice, urgency claims, prompt leaks, markdown and over-long replies, in English and Swahili. A rejected reply gets one corrective retry. If that also fails, a canned safe line is spoken instead, and the valid symptom data is kept. |
 | Drift policy | `harness.IntakeSession` | The 1st off-topic turn gets the model's own redirect and the 2nd a firmer canned redirect. The 3rd ends the call with a health-worker callback. Calls also end after at most 6 turns. |
 | Rules engine | `triage/rules/` | The urgency tier comes **only** from the deterministic rules, never from the model. Every matched rule id is stored for audit. |
 | Fail safe | `rules.py` | If there's no usable data, the symptoms aren't recognised, or the intake didn't finish (hang-up, drift, turn cap, model failure), the call goes to Urgent / CHW callback, never to self-care. |
@@ -192,6 +193,29 @@ decision = decide(report_from_keypresses({"age_group": "2", "fever": "1", "durat
 ```
 
 `triage.dtmf.MENU` holds the question script for recording the local-language prompts.
+
+### Languages and translation
+
+| Language | Path | Status |
+|---|---|---|
+| English | Speech → LLM | Reference text. |
+| Swahili | Speech → LLM, or keypad | Canned lines, keypad script, guardrail phrases and dashboard labels drafted; **need native-speaker review**. |
+| Luganda, Runyankole | Keypad with recorded clips; experimental speech → translation → LLM | No written scripts yet; recorded from the English source. |
+
+```bash
+python examples/export_recording_script.py --out recording_scripts   # one CSV of clips per language
+```
+
+Each CSV row names the clip file the backend plays (`<lang>/<id>.mp3`, plus the shared `all/language_menu.mp3`) and says whether its text still needs translating. The backend plays recordings from `AUDIO_BASE_URL` for the languages in `RECORDED_LANGS` and uses the provider's TTS for the rest. Translated scripts go into `MenuQuestion.translations`, `dtmf.SYSTEM_PROMPTS` and `prompts.CANNED`.
+
+```python
+from triage import TranslatingSession
+from triage.translation import NLLBTranslator   # pip install -e ".[translate]"
+
+session = TranslatingSession(MyLLM(), NLLBTranslator(), "lg")
+```
+
+`NLLBTranslator` defaults to `facebook/nllb-200-distilled-600M`, which covers English, Swahili and Luganda but not Runyankole. Pass another model and `codes` to use one with better Ugandan-language coverage. Any object with `translate(text, source, target)` works.
 
 ### Testing with a local model
 
@@ -242,7 +266,7 @@ python examples/voice_chat.py --asr sunflower
 python examples/voice_chat.py --asr sunflower --language sw
 ```
 
-SunflowerASR can also transcribe Luganda, Runyankole and other Ugandan languages, but `qwen3:8b` understands them poorly. For now the local-language path stays on the keypad menu, as §6 describes. A later version could put a translation step between SunflowerASR and the harness.
+SunflowerASR can also transcribe Luganda, Runyankole and other Ugandan languages, but `qwen3:8b` understands them poorly. `--asr sunflower --language lg` puts a translation step between SunflowerASR and the harness (see *Languages and translation*). On the phone line the local-language path stays on the keypad menu, as §6 describes.
 
 Each turn prints how long speech-to-text and the LLM took, and the ticket is printed at the end. Whisper's Swahili is usable but weaker than its English, and it doesn't support Luganda or Runyankole. Those languages go through the keypad path (`triage/dtmf.py`).
 
