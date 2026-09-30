@@ -14,9 +14,13 @@ dependencies = ["pydantic>=2"]
 dev = ["pytest"]
 voice = ["faster-whisper>=1.1", "sounddevice", "numpy", "pyttsx3"]
 translate = ["transformers", "torch", "sentencepiece"]  # triage.translation.NLLBTranslator
+train = ["numpy>=1.26", "scikit-learn>=1.4"]  # training/followup/train.py only
 
 [tool.setuptools.packages.find]
 include = ["triage*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+"triage.followup" = ["model.json"]
