@@ -67,11 +67,11 @@ def _language_menu():
 def start(phone,sid=None):
     sid=sid or uuid.uuid4().hex[:12]
     s={"sid":sid,"phone":phone,"lang":None,"symptoms":[],"flags":{},"answers":{},"invalid":0,
-       "bio_stage":None,"sex":"","age":0,"name":"","village":""}
+       "bio_stage":None,"sex":"","age":0,"age_band":"","name":"","village":""}
     _sessions[sid]=s
     return s, [_language_menu()], "menu"
 BIO_SEX={"1":"M","2":"F"}
-BIO_AGE={"1":2,"2":10,"3":35,"4":70}  # band mid-point -> stored age
+BIO_AGE={"1":"0-4","2":"5-17","3":"18-59","4":"60+"}  # key -> band label, no fake numbers
 def _bio_prompt(stage:str,lang:str):
     txt={"sex":"Press 1 for male, 2 for female. Sex?","age":"Press 1 under-5, 2 child 5-17, 3 adult 18-59, 4 elder 60 plus. Age group?"}[stage]
     return (lang,f"bio_{stage}",dtmf.system_text(f"bio_{stage}",lang) if f"bio_{stage}" in getattr(dtmf,"SYSTEM_TEXT",{}) else txt)
@@ -94,11 +94,14 @@ def turn(s,text=None,digits=None):
             s["sex"]=""
         s["bio_stage"]="age"; s.pop("bio_retry",None); return None,[_bio_prompt("age",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
     if s.get("bio_stage")=="age":
-        if key in BIO_AGE: s["age"]=BIO_AGE[key]; s["bio_stage"]=None
+        if key in BIO_AGE: s["age"]=0; s["age_band"]=BIO_AGE[key]; s["bio_stage"]=None
         else:
             import re as _re
             m=_re.search(r"\b(\d{1,3})\b",text or "")
-            if m: s["age"]=int(m.group(1)); s["bio_stage"]=None
+            if m:
+                a=int(m.group(1)); s["age"]=0
+                s["age_band"]="0-4" if a<5 else "5-17" if a<18 else "18-59" if a<60 else "60+"
+                s["bio_stage"]=None
             else:
                 if not s.get("bio_retry2"): s["bio_retry2"]=True; return None,[_bio_prompt("age",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
                 s["age"]=0; s["bio_stage"]=None
@@ -109,6 +112,13 @@ def turn(s,text=None,digits=None):
     lang=s["lang"]
     if digits==NURSE_KEY: return None,[line(lang,"connecting_nurse")],"transfer"
     if lang in SPEECH_LANGS:
+        if not (text or "").strip():
+            if not s.get("stt_retry"):
+                s["stt_retry"]=True
+                return None,[line(lang,"describe_symptoms")],"listen"
+            s["symptoms"]+=[]; s["flags"]={**s["flags"],**{"no_audio":True}}
+            return text,None,"triage"
+        s.pop("stt_retry",None)
         d=extract_symptoms(text or ""); s["symptoms"]+=d.get("symptoms",[]); s["flags"]={**s["flags"],**{k:v for k,v in d.items() if k!="symptoms"}}
         return text,None,"triage"
     # Keypad menu: one recorded question per call-back, danger signs first.

@@ -28,6 +28,7 @@ class Ticket(Base):
     diagnosed_by=Column(String,default="")
     transcript=Column(Text,default="")
     summary=Column(Text,default="")
+    age_band=Column(String,default="")
 Base.metadata.create_all(engine)
 for _col, _typ in [("name",String),("age",Integer),("sex",String),("village",String)]:
     try: engine.execute(f"ALTER TABLE tickets ADD COLUMN {_col}") if False else None
@@ -43,13 +44,14 @@ try:
         if "diagnosed_by" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN diagnosed_by VARCHAR DEFAULT ''")
         if "transcript" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN transcript TEXT DEFAULT ''")
         if "summary" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN summary TEXT DEFAULT ''")
+        if "age_band" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN age_band VARCHAR DEFAULT ''")
 except Exception as _e: print("bio migrate skip:",_e)
 app = FastAPI(title="Voice Triage Intake")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"])
 class IntakeIn(BaseModel):
     caller: str=""; lang: str="en"; symptoms: list[str]=[]; flags: dict={}
     name: str=""; age: int=0; sex: str=""; village: str=""
-    transcript: str=""; summary: str=""
+    transcript: str=""; summary: str=""; age_band: str=""
 class StatusIn(BaseModel):
     status: str
     diagnosis: str=""
@@ -58,7 +60,8 @@ def _row(r) -> dict:
     return {"id":r.id,"caller":r.caller,"lang":r.lang,"symptoms":r.symptoms,"tier":r.tier,"reason":r.reason,"confidence":r.confidence,"status":r.status,
         "name":getattr(r,"name","") or "","age":getattr(r,"age",0) or 0,"sex":getattr(r,"sex","") or "","village":getattr(r,"village","") or "",
         "diagnosis":getattr(r,"diagnosis","") or "","diagnosed_by":getattr(r,"diagnosed_by","") or "",
-        "transcript":getattr(r,"transcript","") or "","summary":getattr(r,"summary","") or ""}
+        "transcript":getattr(r,"transcript","") or "","summary":getattr(r,"summary","") or "",
+        "age_band":getattr(r,"age_band","") or _band(getattr(r,"age",0) or 0)}
 def _band(age:int) -> str:
     try: a=int(age)
     except Exception: return "unknown"
@@ -73,13 +76,15 @@ def _summarize(tier: str, symptoms: list[str], bio: dict, transcript: str) -> st
     who=[]
     if bio.get("name"): who.append(str(bio["name"]))
     if bio.get("sex"): who.append(str(bio["sex"]))
-    if bio.get("age"): who.append(f"{bio['age']}y")
+    if bio.get("age_band") and bio["age_band"]!="unknown": who.append(str(bio["age_band"]))
     if bio.get("lang"): who.append(str(bio["lang"]))
     who_s=" ".join(who) or "unknown caller"
     sym=", ".join(symptoms) or "no symptoms captured"
-    fallback=f"{tier.upper}: {who_s} — {sym_s}." if (sym_s:=sym) else f"{tier.upper}: {who_s}."
+    tier_s=str(tier).upper()
+    fallback=f"{tier_s}: {who_s} — {sym}."
     if transcript:
-        fallback+=f" Call notes: {transcript[:300]}"
+        notes="; ".join(dict.fromkeys(transcript.replace("\n","; ").split("; ")))[:300]
+        fallback+=f" Call notes: {notes}"
     if LLM_BASE_URL and LLM_MODEL:
         try:
             import requests as _R
@@ -95,9 +100,9 @@ def _summarize(tier: str, symptoms: list[str], bio: dict, transcript: str) -> st
 @app.post("/api/intake")
 def intake(b: IntakeIn):
     tier,reason,conf=triage(b.symptoms,b.flags)
-    summary=b.summary or _summarize(tier,b.symptoms,{"age":b.age,"sex":b.sex,"lang":b.lang,"name":b.name},b.transcript)
+    summary=b.summary or _summarize(tier,b.symptoms,{"age_band":b.age_band or _band(b.age),"sex":b.sex,"lang":b.lang,"name":b.name},b.transcript)
     db=Session(); t=Ticket(caller=b.caller,lang=b.lang,symptoms=",".join(b.symptoms),tier=tier,reason=reason,confidence=conf,
-        name=b.name,age=b.age,sex=b.sex,village=b.village,transcript=b.transcript,summary=summary)
+        name=b.name,age=b.age,age_band=b.age_band or _band(b.age),sex=b.sex,village=b.village,transcript=b.transcript,summary=summary)
     db.add(t); db.commit(); db.refresh(t); db.close()
     action={"emergency":"nearest facility + alert","urgent":"CHW callback ticket","self_care":"TTS self-care advice"}[tier]
     return {"id":t.id,"tier":tier,"reason":reason,"confidence":conf,"action":action}
@@ -113,7 +118,7 @@ def stats():
     by_tier: dict={}; by_sex: dict={}; by_band: dict={}; by_lang: dict={}; by_village: dict={}
     for r in rows:
         d=_row(r)
-        for tbl,key in [(by_tier,d["tier"]),(by_sex,d["sex"] or "unknown"),(by_band,_band(d["age"])),(by_lang,d["lang"]),(by_village,d["village"] or "unknown")]:
+        for tbl,key in [(by_tier,d["tier"]),(by_sex,d["sex"] or "unknown"),(by_band,d["age_band"] or "unknown"),(by_lang,d["lang"]),(by_village,d["village"] or "unknown")]:
             tbl[key]=tbl.get(key,0)+1
     return {"total":len(rows),"open":sum(1 for r in rows if r.status=="open"),
         "by_tier":by_tier,"by_sex":by_sex,"by_age_band":by_band,"by_lang":by_lang,"by_village":by_village}
@@ -130,6 +135,87 @@ def set_status(tid:int,b:StatusIn):
     if b.diagnosis: t.diagnosis=b.diagnosis
     if b.diagnosed_by: t.diagnosed_by=b.diagnosed_by
     db.commit(); db.close(); return {"ok":True}
+def _to_16k_wav(raw: bytes) -> bytes:
+    """Any audio -> 16kHz mono wav bytes for Wispr Flow. ffmpeg first, afconvert fallback."""
+    import subprocess, tempfile, os
+    with tempfile.NamedTemporaryFile(suffix=".in", delete=False) as f: f.write(raw); src=f.name
+    dst=src+".wav"
+    try:
+        for cmd in (["ffmpeg","-y","-i",src,"-ar","16000","-ac","1","-c:a","pcm_s16le",dst],
+                    ["afconvert","-f","WAVE","-c","1","-d","LEI16","-r","16000",src,dst]):
+            try:
+                subprocess.run(cmd, capture_output=True, timeout=30, check=True)
+                with open(dst,"rb") as fh: return fh.read()
+            except Exception: continue
+        raise RuntimeError("no audio converter worked")
+    finally:
+        for p in (src,dst):
+            try: os.unlink(p)
+            except Exception: pass
+def _transcribe_eleven(raw: bytes, lang: str) -> str | None:
+    """ElevenLabs Scribe. Key already in .env. Primary STT."""
+    from .config import ELEVENLABS_API_KEY, ELEVENLABS_STT_MODEL, STT_TIMEOUT
+    if not ELEVENLABS_API_KEY: return None
+    try:
+        import requests as _R
+        r=_R.post("https://api.elevenlabs.io/v1/speech-to-text",
+            headers={"xi-api-key": ELEVENLABS_API_KEY},
+            data={"model_id": ELEVENLABS_STT_MODEL},
+            files={"file":("call.mp3", raw, "audio/mpeg")}, timeout=STT_TIMEOUT)
+        r.raise_for_status()
+        txt=(r.json().get("text") or "").strip()
+        print(f"stt eleven ok lang={lang} chars={len(txt)}")
+        return txt or None
+    except Exception as e:
+        print("stt eleven fail:", type(e).__name__, str(e)[:200])
+        return None
+def _transcribe_wispr(raw: bytes, lang: str) -> str | None:
+    from .config import WISPRFLOW_API_KEY, WISPRFLOW_TIMEOUT
+    if not WISPRFLOW_API_KEY: return None
+    try:
+        import base64, requests as _R
+        wav=_to_16k_wav(raw)
+        r=_R.post("https://platform-api.wisprflow.ai/api/v1/dash/api",
+            headers={"Authorization": f"Bearer {WISPRFLOW_API_KEY}"},
+            json={"audio": base64.b64encode(wav).decode(),
+                  "properties": {"language": {"sw":"sw","lg":"lg"}.get(lang,"en"), "app_type":"other"}},
+            timeout=WISPRFLOW_TIMEOUT)
+        r.raise_for_status()
+        txt=(r.json().get("text") or "").strip()
+        print(f"stt wispr ok lang={lang} chars={len(txt)}")
+        return txt or None
+    except Exception as e:
+        print("stt wispr fail:", type(e).__name__, str(e)[:200])
+        return None
+def _transcribe_groq(raw: bytes, lang: str) -> str | None:
+    from .config import GROQ_API_KEY, STT_MODEL, STT_TIMEOUT
+    if not GROQ_API_KEY: return None
+    try:
+        import requests as _R
+        r=_R.post("https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            data={"model": STT_MODEL, "language": {"sw": "sw", "lg": "lg"}.get(lang, "en")},
+            files={"file":("call.mp3", raw, "audio/mpeg")}, timeout=STT_TIMEOUT)
+        r.raise_for_status()
+        txt=(r.json().get("text") or "").strip()
+        print(f"stt groq ok lang={lang} chars={len(txt)}")
+        return txt or None
+    except Exception as e:
+        print("stt groq fail:", type(e).__name__, str(e)[:200])
+        return None
+def _transcribe(url: str, lang: str) -> str | None:
+    """Download recording -> Wispr Flow, Groq fallback. None if all fail (caller retries)."""
+    from .config import STT_TIMEOUT
+    if not url: return None
+    try:
+        import requests as _R
+        dl=_R.get(url, timeout=STT_TIMEOUT)
+        dl.raise_for_status()
+        raw=dl.content
+    except Exception as e:
+        print("stt download fail:", type(e).__name__, str(e)[:200])
+        return None
+    return _transcribe_eleven(raw, lang) or _transcribe_wispr(raw, lang) or _transcribe_groq(raw, lang)
 @app.post("/voice", response_class=str)
 def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: str=Form(""), recordingUrl: str=Form(""), isActive: str=Form("1")):
     from fastapi.responses import Response
@@ -139,16 +225,17 @@ def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: st
     if not s:
         s,lines,act=V.start(callerNumber or "",sessionId or None)
         return Response(content=V.render(lines,act),media_type="application/xml")
-    text=None
-    if recordingUrl:
-        try: text=" ".join([]) or None
-        except Exception: pass
+    text=(dtmfDigits or "").strip() if len((dtmfDigits or "").strip())>1 else None  # AT speech-as-text passthrough; single digits stay keypresses
+    if not text and recordingUrl:
+        text=_transcribe(recordingUrl, s.get("lang","en"))
     tr,lines,act=V.turn(s,text=text,digits=dtmfDigits or None)
     log=s.setdefault("transcript_parts",[])
     if dtmfDigits: log.append(f"caller-key: {dtmfDigits}")
     if text: log.append(f"caller: {text}")
     if lines:
-        try: log.append("agent: "+" / ".join(l[2] for l in lines if len(l)>2))
+        try:
+            spoken="agent: "+" / ".join(l[2] for l in lines if len(l)>2)
+            if not log or log[-1]!=spoken: log.append(spoken)  # skip re-ask dupes
         except Exception: pass
     if act=="triage":
         if "report" in s:  # keypad path: full rules engine over the menu answers
@@ -158,9 +245,9 @@ def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: st
         else:
             tier,reason,conf=triage(s["symptoms"],s["flags"]); symptoms=s["symptoms"]
         transcript="\n".join(log)
-        summary=_summarize(tier,symptoms,{"age":s.get("age",0),"sex":s.get("sex",""),"lang":s.get("lang",""),"name":s.get("name","")},transcript)
+        summary=_summarize(tier,symptoms,{"age_band":s.get("age_band","") or "unknown","sex":s.get("sex",""),"lang":s.get("lang",""),"name":s.get("name","")},transcript)
         db=Session(); t=Ticket(caller=s["phone"],lang=s["lang"],symptoms=",".join(symptoms),tier=tier,reason=reason,confidence=conf,
-            name=s.get("name",""),age=s.get("age",0),sex=s.get("sex",""),village=s.get("village",""),
+            name=s.get("name",""),age=0,age_band=s.get("age_band","") or "unknown",sex=s.get("sex",""),village=s.get("village",""),
             transcript=transcript,summary=summary)
         db.add(t); db.commit(); db.close()
         return Response(content=V.render([V.closing(s["lang"],tier)],"hangup"),media_type="application/xml")

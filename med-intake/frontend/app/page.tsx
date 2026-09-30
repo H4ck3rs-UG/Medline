@@ -26,7 +26,6 @@ import {
 import {StatusDot} from '@astryxdesign/core/StatusDot';
 import {Token} from '@astryxdesign/core/Token';
 import {TextArea} from '@astryxdesign/core/TextArea';
-import {TextInput} from '@astryxdesign/core/TextInput';
 import {Collapsible} from '@astryxdesign/core/Collapsible';
 import {ProgressBar} from '@astryxdesign/core/ProgressBar';
 import {AppShell} from '@astryxdesign/core/AppShell';
@@ -77,6 +76,7 @@ interface Ticket extends Record<string, unknown> {
   status: string;
   name: string;
   age: number;
+  age_band: string;
   sex: string;
   village: string;
   diagnosis: string;
@@ -182,13 +182,11 @@ function TicketInspector({
   ticket: Ticket;
   closeLabel: string;
   onClose: (id: number) => void;
-  onDiagnose: (id: number, diagnosis: string, by: string, andClose?: boolean) => void;
+  onDiagnose: (id: number, diagnosis: string, andClose?: boolean) => void;
 }) {
   const [diagnosis, setDiagnosis] = useState(ticket.diagnosis || '');
-  const [by, setBy] = useState(ticket.diagnosed_by || '');
   useEffect(() => {
     setDiagnosis(ticket.diagnosis || '');
-    setBy(ticket.diagnosed_by || '');
   }, [ticket.id]);
   return (
     <VStack gap={4} style={styles.inspector}>
@@ -235,11 +233,6 @@ function TicketInspector({
         {ticket.diagnosis ? (
           <VStack gap={1}>
             <Text type="body">{ticket.diagnosis}</Text>
-            {ticket.diagnosed_by && (
-              <Text type="supporting" color="secondary">
-                by {ticket.diagnosed_by}
-              </Text>
-            )}
           </VStack>
         ) : null}
         {ticket.status === 'open' && (
@@ -250,23 +243,17 @@ function TicketInspector({
               value={diagnosis}
               onChange={setDiagnosis}
             />
-            <TextInput
-              label="Doctor name"
-              placeholder="Dr. …"
-              value={by}
-              onChange={setBy}
-            />
             <HStack gap={2}>
               <Button
                 label="Save diagnosis"
                 variant="secondary"
                 size="sm"
-                onClick={() => onDiagnose(ticket.id, diagnosis, by)}
+                onClick={() => onDiagnose(ticket.id, diagnosis)}
               />
               <Button
                 label={`${closeLabel} with diagnosis`}
                 size="sm"
-                onClick={() => onDiagnose(ticket.id, diagnosis, by, true)}
+                onClick={() => onDiagnose(ticket.id, diagnosis, true)}
               />
             </HStack>
           </VStack>
@@ -288,8 +275,8 @@ function TicketInspector({
         <MetadataListItem label="Name">
           <Text type="body">{ticket.name || '—'}</Text>
         </MetadataListItem>
-        <MetadataListItem label="Age">
-          <Text type="body">{ticket.age > 0 ? ticket.age : '—'}</Text>
+        <MetadataListItem label="Age group">
+          <Text type="body">{ticket.age_band && ticket.age_band !== 'unknown' ? ticket.age_band : '—'}</Text>
         </MetadataListItem>
         <MetadataListItem label="Sex">
           <Text type="body">{ticket.sex || '—'}</Text>
@@ -570,14 +557,13 @@ export default function Page() {
       loadStats();
     });
 
-  const diagnose = (id: number, diagnosis: string, by: string, andClose = false) =>
+  const diagnose = (id: number, diagnosis: string, andClose = false) =>
     fetch(`${API}/api/tickets/${id}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         status: andClose ? 'closed' : 'open',
         diagnosis,
-        diagnosed_by: by,
       }),
     }).then(() => {
       load();
