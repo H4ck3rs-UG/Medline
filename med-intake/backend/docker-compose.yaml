@@ -1,9 +1,9 @@
 services:
   api:
     build:
-      # Repo root (Stack-Start): Dockerfile copies triage/ + med-intake/backend.
-      context: ../..
-      dockerfile: med-intake/backend/Dockerfile
+      # Self-contained: context is this dir (Dockerfile vendors triage/).
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     # Secrets come from the Coolify environment UI (never baked into the image).

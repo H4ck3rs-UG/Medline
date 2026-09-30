@@ -1,0 +1,12 @@
+# Keep backend image builds fast — only triage/ + med-intake/backend ship.
+africas-talking-hackathon/
+med-intake/frontend/node_modules/
+med-intake/frontend/.next/
+med-intake/backend/.venv/
+med-intake/backend/__pycache__/
+med-intake/backend/app/__pycache__/
+triage/__pycache__/
+**/__pycache__/
+**/*.db
+**/.env
+.git/
