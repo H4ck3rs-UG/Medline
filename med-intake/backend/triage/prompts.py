@@ -122,7 +122,7 @@ CANNED: dict[str, dict[str, str]] = {
         ),
         "closing_emergency": (
             "This sounds like it needs care right now. "
-            "Please go to the nearest health facility immediately or call emergency services. "
+            "Please go to the nearest health facility immediately. "
             "We are alerting a health worker."
         ),
         "closing_urgent": (
@@ -151,7 +151,7 @@ CANNED: dict[str, dict[str, str]] = {
         ),
         "closing_emergency": (
             "Hali hii inahitaji huduma sasa hivi. "
-            "Tafadhali nenda kituo cha afya kilicho karibu mara moja au piga simu ya dharura. "
+            "Tafadhali nenda kituo cha afya kilicho karibu mara moja. "
             "Tunamjulisha mhudumu wa afya."
         ),
         "closing_urgent": (
