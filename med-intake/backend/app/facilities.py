@@ -61,7 +61,7 @@ def _need(symptoms: list[str]) -> set[str]:
     need = set()
     if any(w in s for w in ("labour", "pregnancy", "bleed")): need.add("maternity")
     if any(w in s for w in ("seizure", "convulsion", "unconscious", "chest", "breath", "bleed")): need.add("emergency")
-    if any(w in s for w in ("fever", "cough", "diarrhea", "rash")): need.add("pediatrics")
+    if any(w in s for w in ("fever", "cough", "diarrh", "rash")): need.add("pediatrics")  # diarrhea / diarrhoea
     need.add("general")
     return need
 

@@ -17,9 +17,11 @@ from .config import (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT, VOICE_NA
     SUNBIRD_SPEECH_LANGS, SUNBIRD_TTS_LANGS)
 from . import speech
 from triage import dtmf, prompts
-from triage.rules.engine import decide
-from triage.schema import UrgencyTier
+from triage.followup import FollowUpPolicy, Interview
+from triage.followup.interview import QUESTIONS
+from triage.keywords import symptoms_in
 _sessions: dict = {}
+POLICY = FollowUpPolicy()  # loads triage/followup/model.json once
 LANG_KEYS = {"1":"en","2":"sw","3":"lg","4":"nyn"}
 WRITTEN_LANGS = {"en","sw"}  # languages the symptom extraction and the canned scripts are written in
 # Free speech -> STT -> extraction; the other languages use the keypad menu.
@@ -29,30 +31,22 @@ SAY_ONLY_PROMPTS = {"ref_digits"}  # unique per call: read by the instant <Say> 
 _voicer = ThreadPoolExecutor(max_workers=4)
 NURSE_KEY = "0"
 MAX_INVALID_KEYS = 3
-INTENTS = [("human",["human","agent","nurse","doctor","person","muuguzi","daktari"]),("symptom",["fever","cough","pain","bleed","breath","vomit","diarrhea"]),("bye",["bye","thank","kwaheri","asante"]),]
-# Swahili words the keyword fallback maps onto the English symptom names (needs native-speaker review).
-SW_SYMPTOMS = {"homa":"fever","kikohozi":"cough","kukohoa":"cough","anakohoa":"cough","kuharisha":"diarrhea","anaharisha":"diarrhea","kuhara":"diarrhea",
-    "maumivu ya kifua":"chest pain","kupumua":"difficulty breathing","damu":"bleed","kutapika":"vomit","anatapika":"vomit","maumivu":"pain"}
-SEVERE_WORDS = ["severe","heavy","cannot","unconscious","sana","mbaya","hawezi","amezimia"]
-def _keyword(text:str):
-    t=" "+re.sub(r"[^a-z ]"," ",text.lower())+" "
-    for n,ph in INTENTS:
-        if any(p in t for p in ph): return n
-    return "other"
-def extract_symptoms(text:str)->dict:
-    """LLM extract slot (OpenAI-compatible). Fallback: keyword flags (English + Swahili)."""
+def extract_codes(text:str)->list:
+    """Symptom codes (triage.schema.Symptom) from what the caller said: danger-sign
+    and keyword patterns in English/Swahili, plus an LLM's reading when one is set.
+    Only a starting point: the interview then asks the danger signs and key facts."""
+    codes=symptoms_in(text)
     if LLM_BASE_URL and LLM_MODEL:
         try:
             r=requests.post(LLM_BASE_URL.rstrip("/")+"/chat/completions",
                 headers={"Authorization":f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {},
                 timeout=LLM_TIMEOUT, json={"model":LLM_MODEL,"temperature":0,"max_tokens":100,
-                "messages":[{"role":"system","content":"The caller may speak English or Swahili. Extract symptoms as JSON: {symptoms:[], severe:bool, duration_days:int}. Write symptom names in English. No diagnosis."},
+                "messages":[{"role":"system","content":"The caller may speak English or Swahili. List the symptoms they describe as JSON: {\"symptoms\": [plain English names]}. No diagnosis."},
                 {"role":"user","content":text}]})
-            import json; return json.loads(r.json()["choices"][0]["message"]["content"])
-        except Exception as e: print("llm extract fail, rules fallback:",e)
-    low=text.lower()
-    found=[p for _,ph in INTENTS for p in ph if p in low]+[en for sw,en in SW_SYMPTOMS.items() if sw in low]
-    return {"symptoms":list(dict.fromkeys(found)),"severe":any(w in low for w in SEVERE_WORDS),"duration_days":0}
+            import json; names=json.loads(r.json()["choices"][0]["message"]["content"]).get("symptoms",[])
+            codes+=[c for c in symptoms_in(", ".join(map(str,names))) if c not in codes]
+        except Exception as e: print("llm extract fail, keywords only:",e)
+    return codes
 def line(lang:str,prompt_id:str,text:str|None=None):
     return (lang,prompt_id,dtmf.system_text(prompt_id,lang) if text is None else text)
 def question(lang:str,q):
@@ -102,7 +96,6 @@ SEX_WORDS=[("F",r"\b(female|woman|girl|mwanamke|mke|msichana)\b"),("M",r"\b(male
 # Age is asked once, with the keypad menu's own age_group question, and stored as
 # the ticket's age_band. The rules engine needs these groups (e.g. baby under 1).
 AGE_QUESTION=next(q for q in dtmf.MENU if q.id=="age_group")
-AGE_KEY_OF={v.value:k for k,v in AGE_QUESTION.options.items()}  # "infant" -> "1"
 def age_group_of(age:int)->str:
     """Map a spoken age in years onto the triage age groups."""
     if age<1: return "infant"
@@ -112,15 +105,29 @@ def age_group_of(age:int)->str:
 def uses_speech(s)->bool:
     """Free speech for this call, unless it fell back to the keypad menu."""
     return s["lang"] in SPEECH_LANGS and s.get("mode")!="keypad"
+def interview(s)->Interview:
+    """This call's structured questions (triage.followup.Interview), made once the
+    caller's sex and age are known."""
+    if "iv" not in s: s["iv"]=Interview(POLICY,sex=s.get("sex",""),age_group=s.get("age_band",""))
+    return s["iv"]
+def ask_next(s,intro:list|None=None):
+    """Ask the interview's next question, or go to triage when it has nothing left
+    to ask (or the answers already add up to an emergency)."""
+    q=interview(s).next_question()
+    if q is None:
+        s["report"]=s["iv"].finish(); return None,None,"triage"
+    s["q"]=q.id
+    return None,(intro or [])+[question(s["lang"],q)],"menu"
 def first_symptom_step(s,intro:list|None=None):
-    """First symptom prompt after the bio questions (or after a follow-up lookup)."""
+    """First symptom step after the bio questions (or after a follow-up lookup):
+    speech callers describe the problem in their own words; keypad callers go
+    straight to the questions."""
     lang=s["lang"]; intro=intro or []
     if uses_speech(s): return None,intro+[line(lang,"describe_symptoms")],"listen"
-    return None,(intro or [line(lang,"welcome")])+[question(lang,dtmf.next_question(s["answers"]))],"menu"
+    return ask_next(s,intro or [line(lang,"welcome")])
 def resume_follow_up(s,found:dict):
     """A returning caller's ticket was found: reuse their details and go to symptoms."""
     for k in ("sex","age_band","village","name"): s[k]=found.get(k,"") or s.get(k,"")
-    if s["age_band"] in AGE_KEY_OF: s["answers"]["age_group"]=AGE_KEY_OF[s["age_band"]]
     s["parent_id"]=found["id"]; s["parent"]=found; s["visit"]="returning"; s["bio_stage"]=None
     return first_symptom_step(s,[line(s["lang"],"welcome_back")])
 def ref_not_found(s):
@@ -169,7 +176,6 @@ def turn(s,text=None,digits=None):
         m=re.search(r"\b(\d{1,3})\b",text or "")
         if key in AGE_QUESTION.options:
             s["age_band"]=AGE_QUESTION.options[key].value
-            s["answers"]["age_group"]=key  # the keypad menu will not ask again
         elif m: s["age"]=int(m.group(1)); s["age_band"]=age_group_of(s["age"])
         elif not s.get("bio_retry2"): s["bio_retry2"]=True; return None,[line(s["lang"],"invalid_key"),_bio_prompt("age",s["lang"])],"menu"
         s["bio_stage"]=None; s.pop("bio_retry2",None)
@@ -180,28 +186,30 @@ def turn(s,text=None,digits=None):
             if not s.get("stt_retry"):
                 s["stt_retry"]=True
                 return None,[line(lang,"not_heard"),line(lang,"describe_symptoms")],"listen"
-            # Speech failed twice: finish on the keypad menu (never self-care by default).
+            # Speech failed twice: finish on the keypad questions (never self-care by default).
             s["mode"]="keypad"; s["flags"]={**s["flags"],"no_audio":True}
-            return None,[line(lang,"use_keypad"),question(lang,dtmf.next_question(s["answers"]))],"menu"
+            return ask_next(s,[line(lang,"use_keypad")])
         s.pop("stt_retry",None)
         if lang not in WRITTEN_LANGS:  # e.g. Luganda: extraction reads English
             english=speech.translate(text,lang,"en") or ""
-            if not english.strip():  # can't understand it: finish on the keypad menu
+            if not english.strip():  # can't understand it: finish on the keypad questions
                 s["mode"]="keypad"
-                return None,[line(lang,"use_keypad"),question(lang,dtmf.next_question(s["answers"]))],"menu"
+                return ask_next(s,[line(lang,"use_keypad")])
             s["last_translation"]=english; text=english
-        d=extract_symptoms(text or ""); s["symptoms"]+=d.get("symptoms",[]); s["flags"]={**s["flags"],**{k:v for k,v in d.items() if k!="symptoms"}}
-        return text,None,"triage"
-    # Keypad menu: one recorded question per call-back, danger signs first.
-    q=dtmf.next_question(s["answers"])
-    if key not in q.options:
+        codes=extract_codes(text or "")
+        interview(s).add_mentioned(codes); s["symptoms"]=[c.value for c in codes]
+        s["mode"]="keypad"  # the description is in; the rest of the call is keypad questions
+        _,lines,act=ask_next(s)  # a spoken danger sign goes straight to triage
+        return text,lines,act
+    # Keypad questions from the interview: danger signs, key facts, follow-ups.
+    iv=interview(s); qid=s.get("q")
+    if qid is None: return ask_next(s,[line(lang,"welcome")])
+    if not iv.answer(qid,key):
         s["invalid"]+=1
-        if s["invalid"]>=MAX_INVALID_KEYS:  # unfinished menu -> incomplete report -> CHW callback, never self-care
-            s["report"]=dtmf.report_from_keypresses(s["answers"]); return None,None,"triage"
-        return None,[line(lang,"invalid_key"),question(lang,q)],"menu"
-    s["invalid"]=0; s["answers"][q.id]=key
-    report=dtmf.report_from_keypresses(s["answers"]); nxt=dtmf.next_question(s["answers"])
-    if nxt is None or decide(report).tier==UrgencyTier.EMERGENCY:
-        s["report"]=report; return q.id,None,"triage"
-    return q.id,[question(lang,nxt)],"menu"
+        if s["invalid"]>=MAX_INVALID_KEYS:  # unfinished -> incomplete report -> CHW callback, never self-care
+            s["report"]=iv.finish(complete=False); return None,None,"triage"
+        return None,[line(lang,"invalid_key"),question(lang,QUESTIONS[qid])],"menu"
+    s["invalid"]=0
+    _,lines,act=ask_next(s)
+    return qid,lines,act
 def get(sid): return _sessions.get(sid)

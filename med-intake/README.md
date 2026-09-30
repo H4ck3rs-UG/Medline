@@ -89,6 +89,7 @@ Backend reads `backend/.env` (see `.env.example`). Keys:
 - `SUNBIRD_TTS_LANGS` (`sw,lg,nyn`) — spoken by Sunbird voices instead of the AT `<Say>` voice
 - `SUNBIRD_VOICES` — override speakers, e.g. `lug=waxal_lug_0002,swa=waxal_swa_0007`
 - `SUNBIRD_LIVE_TTS_TIMEOUT` (`8`) — seconds a live call waits for a new clip before falling back to `<Say>`
+- `SUNBIRD_LIVE_STT_TIMEOUT` (`15`) — seconds a live call waits for Sunbird speech-to-text before trying the next provider / re-asking
 - `TTS_CACHE_DIR` — clip + translation cache (default `backend/tts_cache/`, gitignored)
 
 Frontend env: `NEXT_PUBLIC_API=http://localhost:8000`

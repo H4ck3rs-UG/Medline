@@ -18,7 +18,7 @@ from datetime import datetime
 from triage import dtmf, prompts
 from triage.adapters.sunbird import SunbirdClient, code
 from .config import (SUNBIRD_API_TOKEN, SUNBIRD_BASE_URL, SUNBIRD_TIMEOUT, SUNBIRD_LIVE_TTS_TIMEOUT,
-    SUNBIRD_VOICES, TTS_CACHE_DIR, PUBLIC_URL)
+    SUNBIRD_LIVE_STT_TIMEOUT, SUNBIRD_VOICES, TTS_CACHE_DIR, PUBLIC_URL)
 
 _client: SunbirdClient|None = None
 _lock = threading.Lock()
@@ -42,8 +42,8 @@ def client() -> SunbirdClient|None:
 def transcribe(raw: bytes, lang: str) -> str|None:
     c = client()
     if not c: return None
-    try:
-        text = c.transcribe(raw, lang)
+    try:  # a caller is waiting: short timeout, no retry (usually 4-5 s, seen at 30+ s)
+        text = c.transcribe(raw, lang, timeout=SUNBIRD_LIVE_STT_TIMEOUT, retries=0)
         print(f"stt sunbird ok lang={lang} chars={len(text)}")
         return text or None
     except Exception as e:

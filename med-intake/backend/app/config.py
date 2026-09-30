@@ -39,6 +39,7 @@ SUNBIRD_API_TOKEN=os.getenv("SUNBIRD_API_TOKEN","")
 SUNBIRD_BASE_URL=os.getenv("SUNBIRD_BASE_URL","https://api.sunbird.ai")
 SUNBIRD_TIMEOUT=float(os.getenv("SUNBIRD_TIMEOUT","30"))
 SUNBIRD_LIVE_TTS_TIMEOUT=float(os.getenv("SUNBIRD_LIVE_TTS_TIMEOUT","8"))  # a caller is waiting; else <Say>
+SUNBIRD_LIVE_STT_TIMEOUT=float(os.getenv("SUNBIRD_LIVE_STT_TIMEOUT","15"))  # then the next STT provider, or a re-ask
 SUNBIRD_SPEECH_LANGS=_set("SUNBIRD_SPEECH_LANGS","lg,nyn")   # keypad-only langs that get free speech via Sunbird
 SUNBIRD_STT_FIRST=_set("SUNBIRD_STT_FIRST","sw,lg,nyn")     # try Sunbird before the other STT providers
 SUNBIRD_TTS_LANGS=_set("SUNBIRD_TTS_LANGS","sw,lg,nyn")     # spoken with Sunbird voices instead of the AT <Say> voice

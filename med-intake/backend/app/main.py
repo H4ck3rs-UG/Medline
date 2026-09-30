@@ -384,12 +384,13 @@ def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: st
             if not log or log[-1]!=spoken: log.append(spoken)  # skip re-ask dupes
         except Exception: pass
     if act=="triage":
-        if "report" in s:  # keypad path: full rules engine over the menu answers
-            d=decide(s["report"]); tier=d.tier.value; reason="; ".join(d.reasons); conf=0
-            symptoms=[x.value for x in s["report"].symptoms]
-            log.append(f"keypad-answers: {s.get('answers',{})}")
-        else:
-            tier,reason,conf=triage(s["symptoms"],s["flags"]); symptoms=s["symptoms"]
+        # Every call path ends in the interview's report; the rules engine decides.
+        report=s.get("report") or V.interview(s).finish(complete=False)
+        d=decide(report); tier=d.tier.value; reason="; ".join(d.reasons); conf=0
+        symptoms=[x.value for x in report.symptoms]
+        log.append(f"interview answers: {V.interview(s).answers}")
+        log.append(f"rules matched: {', '.join(d.matched_rule_ids)}")
+        if s.get("parent_id"): log.append(f"follow-up of MED-{s['parent_id']}")
         transcript="\n".join(log)
         summary=_summarize(tier,symptoms,{"age_band":s.get("age_band","") or "unknown","sex":s.get("sex",""),"lang":s.get("lang",""),"name":s.get("name","")},transcript)
         db=Session(); t=Ticket(caller=s["phone"],lang=s["lang"],symptoms=",".join(symptoms),tier=tier,reason=reason,confidence=conf,
@@ -401,7 +402,6 @@ def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: st
         db.commit(); db.refresh(t); db.close()
         # Send after answering: the SMS (and its translation) must not delay the caller's hang-up line.
         threading.Thread(target=lambda p=s["phone"],l=s["lang"],r=t.reference: _send_sms(p,_sms_copy(l,r,tier)),daemon=True).start()
-        if s.get("parent_id"): log.append(f"follow-up of MED-{s['parent_id']}")
         return Response(content=V.render([V.closing(s["lang"],tier),*V.reference_lines(s["lang"],t.reference)],"hangup"),media_type="application/xml")
     to="+256700300001" if act=="transfer" else ""
     return Response(content=V.render(lines or [],act,to),media_type="application/xml")
