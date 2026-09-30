@@ -145,19 +145,6 @@ export default function LoginTwoColumn() {
                             </Text>
                           </VStack>
 
-                          <Card padding={3} width="100%">
-                            <VStack gap={1}>
-                              <Text type="label">Sample login</Text>
-                              <Text type="body" size="sm">Email: demo@medline.ai</Text>
-                              <Text type="body" size="sm">Password: medline-demo-2026</Text>
-                              <Button
-                                label="Autofill demo credentials"
-                                variant="secondary"
-                                size="sm"
-                                onClick={fillDemo}
-                              />
-                            </VStack>
-                          </Card>
 
                           <VStack gap={2}>
                             <TextInput

@@ -57,7 +57,7 @@ export default function Navbar() {
                         </Link>
                     ))}
                     <ThemeToggle />
-                    <Button label='Sign Up' variant='primary' size='lg' href='/login' as='a' />
+                    <Button label='Sign Up' variant='primary' size='lg' href='/login' as='a' style={{paddingInline: 'var(--spacing-8)', paddingBlock: 'var(--spacing-3)'}} />
                 </div>
 
                 <button onClick={() => setIsOpen(true)} className='transition active:scale-90 md:hidden'>

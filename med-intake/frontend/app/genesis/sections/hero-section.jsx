@@ -39,8 +39,8 @@ export default function HeroSection() {
                     viewport={{ once: true }}
                     transition={{ type: "spring", stiffness: 320, damping: 70, mass: 1 }}
                 >
-                    <Button label='Call +256 323 200 717' variant='primary' size='lg' href='tel:+256323200717' as='a' />
-                    <Button label='Staff login' variant='secondary' size='lg' icon={<PlayCircleIcon className="size-4.5" />} href='/login' as='a' />
+                    <Button label='Call +256 323 200 717' variant='primary' size='lg' href='tel:+256323200717' as='a' style={{paddingInline: 'var(--spacing-8)', paddingBlock: 'var(--spacing-4)'}} />
+                    <Button label='Staff login' variant='secondary' size='lg' icon={<PlayCircleIcon className="size-4.5" />} href='/login' as='a' style={{paddingInline: 'var(--spacing-8)', paddingBlock: 'var(--spacing-4)'}} />
                 </motion.div>
             </motion.section>
         </>
