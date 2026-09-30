@@ -210,7 +210,7 @@ def queues():
     return out
 @app.post("/api/route/{tid}")
 def reroute(tid:int):
-    db=Session(); t=db.query(Ticket).get(tid)
+    db=Session(); t=db.get(Ticket, tid)
     if not t: raise HTTPException(404,"no ticket")
     reason=_assign_route(t,(t.symptoms or "").split(","),t.village or "")
     db.commit(); d=_row(t); db.close()
@@ -244,17 +244,24 @@ def stats():
         "by_tier":by_tier,"by_sex":by_sex,"by_age_band":by_band,"by_lang":by_lang,"by_village":by_village}
 @app.get("/api/tickets/{tid}")
 def one(tid:int):
-    db=Session(); t=db.query(Ticket).get(tid); db.close()
+    db=Session(); t=db.get(Ticket, tid); db.close()
     if not t: raise HTTPException(404,"no ticket")
     return _row(t)
 @app.post("/api/tickets/{tid}")
 def set_status(tid:int,b:StatusIn):
-    db=Session(); t=db.query(Ticket).get(tid)
-    if not t: raise HTTPException(404,"no ticket")
-    t.status=b.status
-    if b.diagnosis: t.diagnosis=b.diagnosis
-    if b.diagnosed_by: t.diagnosed_by=b.diagnosed_by
-    db.commit(); db.close(); return {"ok":True}
+    if b.status not in ("open","closed"): raise HTTPException(400,"bad status")
+    db=Session()
+    try:
+        t=db.get(Ticket, tid)
+        if not t: raise HTTPException(404,"no ticket")
+        t.status=b.status
+        if b.diagnosis: t.diagnosis=b.diagnosis
+        if b.diagnosed_by: t.diagnosed_by=b.diagnosed_by
+        db.commit()
+    except HTTPException: db.rollback(); raise
+    except Exception: db.rollback(); raise HTTPException(500,"update failed")
+    finally: db.close()
+    return {"ok":True}
 def _to_16k_wav(raw: bytes) -> bytes:
     """Any audio -> 16kHz mono wav bytes for Wispr Flow. ffmpeg first, afconvert fallback."""
     import subprocess, tempfile, os
@@ -350,6 +357,14 @@ def _transcribe(url: str, lang: str) -> str | None:
         text=provider(raw, lang)
         if text: return text
     return None
+@app.get("/")
+def index():
+    return {"service":"Med-Intake API","health":"/health","endpoints":["POST /api/intake","GET /api/tickets","GET /api/tickets/{id}","GET /api/tickets/ref/{ref}","POST /api/tickets/{id}","GET /api/stats","GET /api/facilities","GET /api/queues","POST /api/route/{id}","POST /api/sim/seed","POST /voice"]}
+@app.get("/voice")
+def voice_validate():
+    from fastapi.responses import Response
+    s,lines,act=V.start("",None)
+    return Response(content=V.render(lines,act),media_type="application/xml")
 @app.post("/voice")
 def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: str=Form(""), recordingUrl: str=Form(""), isActive: str=Form("1")):
     from fastapi.responses import Response
@@ -366,7 +381,7 @@ def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: st
     log=s.setdefault("transcript_parts",[])
     if act=="lookup_ref":
         tid=_parse_ref(tr or "")
-        db=Session(); old=db.query(Ticket).get(tid) if tid else None
+        db=Session(); old=db.get(Ticket, tid) if tid else None
         found=_row(old) if old else None; db.close()
         if found:
             log.append(f"follow-up ref MED-{tid}")
@@ -410,7 +425,7 @@ def by_ref(ref:str):
     tid=_parse_ref(ref)
     if not tid: raise HTTPException(404,"bad reference")
     db=Session()
-    t=db.query(Ticket).get(tid); db.close()
+    t=db.get(Ticket, tid); db.close()
     if not t: raise HTTPException(404,"no ticket")
     d=_row(t)
     db2=Session(); kids=[_row(r) for r in db2.query(Ticket).filter(Ticket.parent_id==tid).order_by(Ticket.id).all()]; db2.close()

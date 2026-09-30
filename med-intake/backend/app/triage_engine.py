@@ -2,7 +2,7 @@
 from typing import Literal
 Tier = Literal["emergency","urgent","self_care"]
 EMERGENCY = {"chest pain","difficulty breathing","severe bleeding","unconscious","labour","seizure","stroke"}
-URGENT = {"high fever","dehydration","persistent vomiting","severe pain","fever","cough","diarrhea"}
+URGENT = {"high fever","dehydration","persistent vomiting","vomiting","severe pain","pain","bleeding","fever","cough","diarrhea"}
 def triage(symptoms: list[str], flags: dict) -> tuple[Tier,str,int]:
     s = {x.lower().strip() for x in symptoms}
     if flags.get("emergency_flag") or (s & EMERGENCY and flags.get("severe",False)):
