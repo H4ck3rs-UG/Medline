@@ -31,7 +31,7 @@ const neutralSyntax = defineSyntaxTheme({
 });
 
 const neutralLocalTokens: Record<string, TokenValue> = {
-  '--astryx-theme-neutral-color-status-fill-accent': ['#0074e2', '#6d9cfe'],
+  '--astryx-theme-neutral-color-status-fill-accent': ['#0e6e6b', '#4fb3ad'],
   '--astryx-theme-neutral-color-status-fill-success': ['#198100', '#64af4c'],
   '--astryx-theme-neutral-color-status-fill-warning': '#ffce2f',
   '--astryx-theme-neutral-color-status-fill-error': ['#c9303a', '#ff705d'],
@@ -101,13 +101,13 @@ export const neutralTheme = defineTheme({
   syntax: neutralSyntax,
 
   tokens: {
-    '--color-background-surface': ['#f2f8ff', neutral.dark[15]],
-    '--color-background-body': ['#eaf3fe', neutral.dark[10]],
+    '--color-background-surface': ['#fffdf9', neutral.dark[15]],
+    '--color-background-body': ['#faf6ef', neutral.dark[10]],
     '--color-background-card': [neutral.light[100], neutral.dark[10]],
     '--color-background-popover': [neutral.light[100], neutral.dark[10]],
     '--color-background-muted': [neutral.light[95], neutral.dark[10]],
 
-    '--color-accent': ['#0b6bcb', '#6db3f2'],
+    '--color-accent': ['#0e6e6b', '#4fb3ad'],
     '--color-accent-muted': [neutral.light[95], neutral.dark[15]],
     '--color-neutral': [
       withAlpha(neutral.light[0], '0F'),
@@ -132,7 +132,7 @@ export const neutralTheme = defineTheme({
     '--color-text-primary': [neutral.light[0], neutral.dark[100]],
     '--color-text-secondary': [neutral.light[30], neutral.dark[65]],
     '--color-text-disabled': [neutral.light[60], neutral.dark[35]],
-    '--color-text-accent': [neutral.light[10], neutral.dark[95]],
+    '--color-text-accent': ['#0b5a57', '#7fd0ca'],
     '--color-on-dark': neutral.light[100],
     '--color-on-light': neutral.light[5],
     '--color-on-accent': [neutral.light[100], neutral.dark[5]],
@@ -141,7 +141,7 @@ export const neutralTheme = defineTheme({
     '--color-on-warning': neutral.light[5],
 
     // Icon
-    '--color-icon-accent': [neutral.light[10], neutral.dark[95]],
+    '--color-icon-accent': ['#0b5a57', '#7fd0ca'],
     '--color-icon-primary': [neutral.light[0], neutral.dark[100]],
     '--color-icon-secondary': [neutral.light[45], neutral.dark[65]],
     '--color-icon-disabled': [neutral.light[60], neutral.dark[35]],

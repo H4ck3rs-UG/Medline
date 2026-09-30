@@ -67,7 +67,8 @@ def _language_menu():
 def start(phone,sid=None):
     sid=sid or uuid.uuid4().hex[:12]
     s={"sid":sid,"phone":phone,"lang":None,"symptoms":[],"flags":{},"answers":{},"invalid":0,
-       "bio_stage":None,"sex":"","age":0,"age_band":"","name":"","village":""}
+       "bio_stage":None,"sex":"","age":0,"age_band":"","name":"","village":"",
+       "visit":None,"ref_buf":"","parent_id":0,"parent":None}
     _sessions[sid]=s
     return s, [_language_menu()], "menu"
 BIO_SEX={"1":"M","2":"F"}
@@ -80,8 +81,34 @@ def turn(s,text=None,digits=None):
     if not s.get("lang"):
         lang=LANG_KEYS.get(key)
         if not lang: return None,[_language_menu()],"menu"
-        s["lang"]=lang; s["bio_stage"]="sex"
-        return None,[_bio_prompt("sex",lang)],"menu"
+        s["lang"]=lang; s["visit"]="ask"
+        ask=(lang,"visit_type","For a new visit press 1. For follow-up with a reference number press 9." if lang=="en"
+             else "Kwa ziara mpya bonyeza 1. Kwa kufuatilia na namba ya kumbukumbu bonyeza 9." if lang=="sw"
+             else "For a new visit press 1. For follow-up press 9.")
+        return None,[ask],"menu"
+    # Visit type: 1 = new, 9 = follow-up (enter MED digits + #). Asked right after language.
+    if s.get("visit")=="ask":
+        if key=="9":
+            s["visit"]="ref"
+            p=(s["lang"],"ref_prompt","Enter your reference number, then press hash." if s["lang"]=="en"
+               else "Weka namba yako ya kumbukumbu, kisha bonyeza hash." if s["lang"]=="sw"
+               else "Enter your reference number, then press hash.")
+            return None,[p],"menu"
+        s["visit"]="new"; s["bio_stage"]="sex"
+        return None,[_bio_prompt("sex",s["lang"])],"menu"
+    if s.get("visit")=="ref":
+        digits=(digits or "")
+        if "#" in digits:
+            s["ref_buf"]+=digits.split("#")[0]
+            return s["ref_buf"],[],"lookup_ref"
+        if digits:
+            s["ref_buf"]+=digits
+            if len(s["ref_buf"])>=6: return s["ref_buf"],[],"lookup_ref"
+            return None,[],"menu"  # keep collecting, no replay
+        if text:
+            s["ref_buf"]+="".join(ch for ch in text if ch.isdigit())
+            if s["ref_buf"]: return s["ref_buf"],[],"lookup_ref"
+        return None,[(s["lang"],"ref_prompt","Enter your reference number, then press hash.")],"menu"
     # Bio stage first: sex -> age -> symptoms. Works for speech + DTMF langs alike.
     if s.get("bio_stage")=="sex":
         if key in BIO_SEX: s["sex"]=BIO_SEX[key]; s["bio_stage"]="age"; return None,[_bio_prompt("age",s["lang"])],"menu"

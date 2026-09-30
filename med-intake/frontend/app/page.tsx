@@ -49,7 +49,7 @@ import {
   YAxis,
 } from 'recharts';
 import {useMediaQuery} from '@astryxdesign/core/hooks';
-import {BellAlertIcon, ChartBarIcon, Cog6ToothIcon, InboxIcon} from '@heroicons/react/24/outline';
+import {BellAlertIcon, BuildingOfficeIcon, ChartBarIcon, Cog6ToothIcon, InboxIcon} from '@heroicons/react/24/outline';
 import {STRINGS, UI_LANGS, type UiLang} from './i18n';
 
 const API = process.env.NEXT_PUBLIC_API || 'http://localhost:8000';
@@ -83,6 +83,33 @@ interface Ticket extends Record<string, unknown> {
   diagnosed_by: string;
   transcript: string;
   summary: string;
+  reference: string;
+  parent_id: number;
+  facility_id: number;
+  queue_pos: number;
+  follow_ups?: Ticket[];
+}
+
+interface Facility {
+  id: number;
+  name: string;
+  kind: string;
+  lat: number;
+  lng: number;
+  capabilities: string[];
+  slots: number;
+  load: number;
+  free: number;
+  wait_min: number;
+}
+
+interface QueueEntry {
+  id: number;
+  reference: string;
+  tier: string;
+  summary: string;
+  position: number;
+  wait_min: number;
 }
 
 interface Stats {
@@ -146,7 +173,7 @@ function TicketRows({
             {group.items.map(t => (
               <ListItem
                 key={t.id}
-                label={`#${t.id} · ${t.caller || 'unknown'}`}
+                label={`${t.reference || 'MED-' + t.id} · ${t.caller || 'unknown'}`}
                 description={`${t.symptoms} · ${t.reason}`}
                 startContent={
                   <StatusDot
@@ -178,24 +205,37 @@ function TicketInspector({
   closeLabel,
   onClose,
   onDiagnose,
+  facilities,
+  tickets,
+  onSelect,
 }: {
   ticket: Ticket;
   closeLabel: string;
   onClose: (id: number) => void;
   onDiagnose: (id: number, diagnosis: string, andClose?: boolean) => void;
+  facilities: Facility[];
+  tickets: Ticket[];
+  onSelect: (id: number) => void;
 }) {
   const [diagnosis, setDiagnosis] = useState(ticket.diagnosis || '');
+  const [detail, setDetail] = useState<Ticket | null>(null);
   useEffect(() => {
     setDiagnosis(ticket.diagnosis || '');
+    setDetail(null);
+    fetch(`${API}/api/tickets/ref/${ticket.reference || 'MED-' + ticket.id}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(setDetail)
+      .catch(() => {});
   }, [ticket.id]);
+  const fac = facilities.find(f => f.id === ticket.facility_id);
+  const chain = detail?.follow_ups ?? [];
+  const shown = detail ?? ticket;
   return (
     <VStack gap={4} style={styles.inspector}>
       <VStack gap={2}>
         <HStack gap={2} vAlign="center">
           <StatusDot variant={TIER_DOT[ticket.tier]} label={ticket.tier} />
-          <Text type="supporting" color="secondary">
-            #{ticket.id}
-          </Text>
+          <Token size="sm" color="purple" label={ticket.reference || `MED-${ticket.id}`} />
           <Token
             size="sm"
             color={ticket.status === 'open' ? 'blue' : 'gray'}
@@ -203,7 +243,37 @@ function TicketInspector({
           />
         </HStack>
         <Heading level={2}>{TIER_LABEL[ticket.tier]}</Heading>
+        <Text type="supporting" color="secondary">
+          {fac ? `Routed: ${fac.name}${ticket.queue_pos ? ` · queue #${ticket.queue_pos}` : ''}` : 'Not routed (self-care)'}
+          {ticket.parent_id > 0 ? ` · follow-up of MED-${ticket.parent_id}` : ''}
+        </Text>
       </VStack>
+
+      {chain.length > 0 && (
+        <>
+          <Divider />
+          <VStack gap={2}>
+            <Heading level={3}>Patient map — {chain.length + 1} linked visits</Heading>
+            <List density="compact" hasDividers>
+              {[{...ticket, follow_ups: undefined}, ...chain].map(t => (
+                <ListItem
+                  key={t.id}
+                  label={`${t.reference || 'MED-' + t.id} · ${TIER_LABEL[t.tier] ?? t.tier}`}
+                  description={t.summary || t.symptoms}
+                  startContent={
+                    <StatusDot
+                      variant={TIER_DOT[t.tier as keyof typeof TIER_DOT] ?? 'neutral'}
+                      label={t.tier}
+                    />
+                  }
+                  onClick={() => t.id !== ticket.id && onSelect(t.id)}
+                  isSelected={t.id === ticket.id}
+                />
+              ))}
+            </List>
+          </VStack>
+        </>
+      )}
 
       <Divider />
 
@@ -508,11 +578,159 @@ function SexChart({stats}: {stats: Stats | null}) {
   );
 }
 
-type View = 'dashboard' | 'queue' | 'settings';
+type View = 'dashboard' | 'queue' | 'facilities' | 'settings';
+
+const TIER_SVG_FILL: Record<string, string> = {
+  emergency: 'var(--color-error)',
+  urgent: 'var(--color-warning)',
+  self_care: 'var(--color-success)',
+};
+
+function FacilityMap({facilities, tickets}: {facilities: Facility[]; tickets: Ticket[]}) {
+  const LAT0 = 0.28, LAT1 = 0.39, LNG0 = 32.54, LNG1 = 32.62, W = 600, H = 420;
+  const X = (lng: number) => ((lng - LNG0) / (LNG1 - LNG0)) * W;
+  const Y = (lat: number) => H - ((lat - LAT0) / (LAT1 - LAT0)) * H;
+  const jitter = (id: number, salt: number) => ((id * 37 + salt * 11) % 17) - 8;
+  return (
+    <Card>
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center">
+          <StackItem size="fill">
+            <Heading level={3}>Catchment map — Kampala (sim coords)</Heading>
+          </StackItem>
+          <HStack gap={2} vAlign="center">
+            {(Object.keys(TIER_SVG_FILL) as string[]).map(t => (
+              <HStack gap={1} vAlign="center" key={t}>
+                <svg width="10" height="10" aria-hidden="true">
+                  <circle cx="5" cy="5" r="4" fill={TIER_SVG_FILL[t]} />
+                </svg>
+                <Text type="supporting" color="secondary">
+                  {TIER_LABEL[t] ?? t}
+                </Text>
+              </HStack>
+            ))}
+          </HStack>
+        </HStack>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Facility and ticket map">
+          <rect x="0" y="0" width={W} height={H} fill="var(--color-background-muted)" rx="8" />
+          {facilities.map(f => (
+            <g key={f.id}>
+              <rect
+                x={X(f.lng) - 8}
+                y={Y(f.lat) - 8}
+                width="16"
+                height="16"
+                rx="3"
+                fill="var(--color-accent)"
+                stroke="var(--color-background-surface)"
+                strokeWidth="2"
+              />
+              <text x={X(f.lng) + 12} y={Y(f.lat) + 4} fontSize="11" fill="var(--color-text-primary)">
+                {f.name} ({f.load}/{f.slots})
+              </text>
+            </g>
+          ))}
+          {tickets
+            .filter(t => t.status === 'open' && t.facility_id > 0)
+            .map(t => {
+              const f = facilities.find(x => x.id === t.facility_id);
+              if (!f) return null;
+              return (
+                <circle
+                  key={t.id}
+                  cx={X(f.lng) + jitter(t.id, 1)}
+                  cy={Y(f.lat) + jitter(t.id, 2)}
+                  r={t.tier === 'emergency' ? 6 : 4}
+                  fill={TIER_SVG_FILL[t.tier] ?? 'var(--color-neutral)'}
+                >
+                  <title>{`${t.reference}: ${t.summary}`}</title>
+                </circle>
+              );
+            })}
+        </svg>
+        <Text type="supporting" color="secondary">
+          Squares = facilities (load/slots). Dots = open routed tickets near their facility. Positions simulated.
+        </Text>
+      </VStack>
+    </Card>
+  );
+}
+
+function FacilityCards({
+  facilities,
+  queues,
+  onSeed,
+}: {
+  facilities: Facility[];
+  queues: Record<string, {facility: Facility; queue: QueueEntry[]}>;
+  onSeed: () => void;
+}) {
+  return (
+    <VStack gap={3}>
+      <HStack gap={2} vAlign="center">
+        <StackItem size="fill">
+          <Heading level={3}>Facilities + live queues</Heading>
+        </StackItem>
+        <Button label="Seed sim data" variant="secondary" size="sm" onClick={onSeed} />
+      </HStack>
+      <HStack gap={3}>
+        {facilities.map(f => (
+          <StackItem size="fill" key={f.id}>
+            <Card>
+              <VStack gap={2}>
+                <HStack gap={2} vAlign="center">
+                  <StackItem size="fill">
+                    <Text type="label">{f.name}</Text>
+                  </StackItem>
+                  <Token size="sm" color="default" label={f.kind} />
+                </HStack>
+                <Text type="supporting" color="secondary">
+                  {f.load}/{f.slots} queued · ~{f.wait_min} min wait
+                </Text>
+                <ProgressBar
+                  label={`${f.name} load`}
+                  value={f.load}
+                  max={Math.max(f.slots, 1)}
+                  variant={f.load >= f.slots ? 'error' : f.load / Math.max(f.slots, 1) > 0.7 ? 'warning' : 'success'}
+                  isLabelHidden
+                />
+                <VStack gap={1}>
+                  {(queues[String(f.id)]?.queue ?? []).slice(0, 5).map(q => (
+                    <HStack gap={2} vAlign="center" key={q.id}>
+                      <StatusDot
+                        variant={q.tier === 'emergency' ? 'error' : q.tier === 'urgent' ? 'warning' : 'success'}
+                        label={q.tier}
+                      />
+                      <StackItem size="fill">
+                        <Text type="body">
+                          #{q.position} {q.reference}
+                        </Text>
+                      </StackItem>
+                      <Text type="supporting" color="secondary">
+                        ~{q.wait_min}m
+                      </Text>
+                    </HStack>
+                  ))}
+                  {(queues[String(f.id)]?.queue ?? []).length === 0 && (
+                    <Text type="supporting" color="secondary">
+                      Queue empty
+                    </Text>
+                  )}
+                </VStack>
+              </VStack>
+            </Card>
+          </StackItem>
+        ))}
+      </HStack>
+    </VStack>
+  );
+}
 
 export default function Page() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [queues, setQueues] = useState<Record<string, {facility: Facility; queue: QueueEntry[]}>>({});
   const [tierFilter, setTierFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [lang, setLang] = useState<UiLang>('en');
@@ -536,26 +754,47 @@ export default function Page() {
       .catch(() => {});
   const loadStats = () =>
     fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => {});
+  const loadFacilities = () =>
+    fetch(`${API}/api/facilities`).then(r => r.json()).then(setFacilities).catch(() => {});
+  const loadQueues = () =>
+    fetch(`${API}/api/queues`).then(r => r.json()).then(setQueues).catch(() => {});
+  const seedSim = () =>
+    fetch(`${API}/api/sim/seed?n=24`, {method: 'POST'})
+      .then(() => {
+        load();
+        loadStats();
+        loadFacilities();
+        loadQueues();
+      })
+      .catch(() => {});
 
   useEffect(() => {
     load();
     loadStats();
+    loadFacilities();
+    loadQueues();
     const i = setInterval(() => {
       load();
       loadStats();
+      loadFacilities();
+      loadQueues();
     }, 3000);
     return () => clearInterval(i);
   }, []);
+
+  const refreshAll = () => {
+    load();
+    loadStats();
+    loadFacilities();
+    loadQueues();
+  };
 
   const close = (id: number) =>
     fetch(`${API}/api/tickets/${id}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({status: 'closed'}),
-    }).then(() => {
-      load();
-      loadStats();
-    });
+    }).then(refreshAll);
 
   const diagnose = (id: number, diagnosis: string, andClose = false) =>
     fetch(`${API}/api/tickets/${id}`, {
@@ -565,10 +804,7 @@ export default function Page() {
         status: andClose ? 'closed' : 'open',
         diagnosis,
       }),
-    }).then(() => {
-      load();
-      loadStats();
-    });
+    }).then(refreshAll);
 
   const isNarrow = useMediaQuery('(max-width: 1024px)');
   const inspectorPanel = useResizable({defaultSize: 380, minSize: 320, maxSize: 480});
@@ -663,7 +899,7 @@ export default function Page() {
             />
             <LayoutPanel width={inspectorPanel.size} padding={0} label="Ticket details">
               {selected ? (
-                <TicketInspector ticket={selected} closeLabel={s.close} onClose={close} onDiagnose={diagnose} />
+                <TicketInspector ticket={selected} closeLabel={s.close} onClose={close} onDiagnose={diagnose} facilities={facilities} tickets={tickets} onSelect={setSelectedId} />
               ) : (
                 <EmptyState
                   title="No ticket selected"
@@ -712,6 +948,15 @@ export default function Page() {
               onClick={() => setView('queue')}
               endContent={
                 <Token size="sm" color="red" label={String(openCount)} />
+              }
+            />
+            <SideNavItem
+              label="Facilities"
+              icon={<Icon icon={BuildingOfficeIcon} size="sm" />}
+              isSelected={view === 'facilities'}
+              onClick={() => setView('facilities')}
+              endContent={
+                <Token size="sm" color="default" label={String(facilities.length)} />
               }
             />
           </SideNavSection>
@@ -764,6 +1009,22 @@ export default function Page() {
         </LayoutContent>
       )}
       {view === 'queue' && queue}
+      {view === 'facilities' && (
+        <LayoutContent padding={4}>
+          <VStack gap={4}>
+            <HStack gap={2} vAlign="center">
+              <StackItem size="fill">
+                <Heading level={1}>Facility routing + queues</Heading>
+              </StackItem>
+            </HStack>
+            <Text type="supporting" color="secondary">
+              Every urgent/emergency ticket auto-routes to the best facility by distance, capability and load. Queues are emergency-first.
+            </Text>
+            <FacilityMap facilities={facilities} tickets={tickets} />
+            <FacilityCards facilities={facilities} queues={queues} onSeed={seedSim} />
+          </VStack>
+        </LayoutContent>
+      )}
       {view === 'settings' && (
         <LayoutContent padding={4}>
           <VStack gap={4}>
