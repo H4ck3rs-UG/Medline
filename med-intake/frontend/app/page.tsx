@@ -26,7 +26,6 @@ import {
 import {StatusDot} from '@astryxdesign/core/StatusDot';
 import {Token} from '@astryxdesign/core/Token';
 import {TextArea} from '@astryxdesign/core/TextArea';
-import {TextInput} from '@astryxdesign/core/TextInput';
 import {Collapsible} from '@astryxdesign/core/Collapsible';
 import {ProgressBar} from '@astryxdesign/core/ProgressBar';
 import {AppShell} from '@astryxdesign/core/AppShell';
@@ -50,11 +49,12 @@ import {
   YAxis,
 } from 'recharts';
 import {useMediaQuery} from '@astryxdesign/core/hooks';
-import {BellAlertIcon, ChartBarIcon, Cog6ToothIcon, InboxIcon} from '@heroicons/react/24/outline';
+import {BellAlertIcon, BuildingOfficeIcon, ChartBarIcon, Cog6ToothIcon, InboxIcon} from '@heroicons/react/24/outline';
 import {
   STRINGS,
   UI_LANGS,
   ageGroupLabel,
+  facilityKindLabel,
   callLangLabel,
   fmt,
   sexLabel,
@@ -89,13 +89,40 @@ interface Ticket extends Record<string, unknown> {
   status: string;
   name: string;
   age: number;
-  age_group: string;
+  age_band: string;
   sex: string;
   village: string;
   diagnosis: string;
   diagnosed_by: string;
   transcript: string;
   summary: string;
+  reference: string;
+  parent_id: number;
+  facility_id: number;
+  queue_pos: number;
+  follow_ups?: Ticket[];
+}
+
+interface Facility {
+  id: number;
+  name: string;
+  kind: string;
+  lat: number;
+  lng: number;
+  capabilities: string[];
+  slots: number;
+  load: number;
+  free: number;
+  wait_min: number;
+}
+
+interface QueueEntry {
+  id: number;
+  reference: string;
+  tier: string;
+  summary: string;
+  position: number;
+  wait_min: number;
 }
 
 interface Stats {
@@ -155,7 +182,7 @@ function TicketRows({
             {group.items.map(t => (
               <ListItem
                 key={t.id}
-                label={`#${t.id} · ${t.caller || s.unknownCaller}`}
+                label={`${t.reference || 'MED-' + t.id} · ${t.caller || s.unknownCaller}`}
                 description={`${symptomsLabel(t.symptoms, lang) || s.noSymptoms} · ${t.reason}`}
                 startContent={
                   <StatusDot
@@ -187,27 +214,38 @@ function TicketInspector({
   lang,
   onClose,
   onDiagnose,
+  facilities,
+  tickets,
+  onSelect,
 }: {
   ticket: Ticket;
   lang: UiLang;
   onClose: (id: number) => void;
-  onDiagnose: (id: number, diagnosis: string, by: string, andClose?: boolean) => void;
+  onDiagnose: (id: number, diagnosis: string, andClose?: boolean) => void;
+  facilities: Facility[];
+  tickets: Ticket[];
+  onSelect: (id: number) => void;
 }) {
   const s = STRINGS[lang];
   const [diagnosis, setDiagnosis] = useState(ticket.diagnosis || '');
-  const [by, setBy] = useState(ticket.diagnosed_by || '');
+  const [detail, setDetail] = useState<Ticket | null>(null);
   useEffect(() => {
     setDiagnosis(ticket.diagnosis || '');
-    setBy(ticket.diagnosed_by || '');
+    setDetail(null);
+    fetch(`${API}/api/tickets/ref/${ticket.reference || 'MED-' + ticket.id}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(setDetail)
+      .catch(() => {});
   }, [ticket.id]);
+  const fac = facilities.find(f => f.id === ticket.facility_id);
+  const chain = detail?.follow_ups ?? [];
+  const shown = detail ?? ticket;
   return (
     <VStack gap={4} style={styles.inspector}>
       <VStack gap={2}>
         <HStack gap={2} vAlign="center">
           <StatusDot variant={TIER_DOT[ticket.tier]} label={tierLabel(ticket.tier, lang)} />
-          <Text type="supporting" color="secondary">
-            #{ticket.id}
-          </Text>
+          <Token size="sm" color="purple" label={ticket.reference || `MED-${ticket.id}`} />
           <Token
             size="sm"
             color={ticket.status === 'open' ? 'blue' : 'gray'}
@@ -215,7 +253,39 @@ function TicketInspector({
           />
         </HStack>
         <Heading level={2}>{tierLabel(ticket.tier, lang)}</Heading>
+        <Text type="supporting" color="secondary">
+          {fac
+            ? fmt(ticket.queue_pos ? s.routedQueue : s.routed, {name: fac.name, n: ticket.queue_pos})
+            : s.notRouted}
+          {ticket.parent_id > 0 ? fmt(s.followUpOf, {ref: `MED-${ticket.parent_id}`}) : ''}
+        </Text>
       </VStack>
+
+      {chain.length > 0 && (
+        <>
+          <Divider />
+          <VStack gap={2}>
+            <Heading level={3}>{fmt(s.patientMap, {n: chain.length + 1})}</Heading>
+            <List density="compact" hasDividers>
+              {[{...ticket, follow_ups: undefined}, ...chain].map(t => (
+                <ListItem
+                  key={t.id}
+                  label={`${t.reference || 'MED-' + t.id} · ${tierLabel(t.tier, lang)}`}
+                  description={t.summary || symptomsLabel(t.symptoms, lang)}
+                  startContent={
+                    <StatusDot
+                      variant={TIER_DOT[t.tier as keyof typeof TIER_DOT] ?? 'neutral'}
+                      label={tierLabel(t.tier, lang)}
+                    />
+                  }
+                  onClick={() => t.id !== ticket.id && onSelect(t.id)}
+                  isSelected={t.id === ticket.id}
+                />
+              ))}
+            </List>
+          </VStack>
+        </>
+      )}
 
       <Divider />
 
@@ -245,11 +315,6 @@ function TicketInspector({
         {ticket.diagnosis ? (
           <VStack gap={1}>
             <Text type="body">{ticket.diagnosis}</Text>
-            {ticket.diagnosed_by && (
-              <Text type="supporting" color="secondary">
-                {fmt(s.diagnosedBy, {name: ticket.diagnosed_by})}
-              </Text>
-            )}
           </VStack>
         ) : null}
         {ticket.status === 'open' && (
@@ -260,23 +325,17 @@ function TicketInspector({
               value={diagnosis}
               onChange={setDiagnosis}
             />
-            <TextInput
-              label={s.doctorName}
-              placeholder="Dr. …"
-              value={by}
-              onChange={setBy}
-            />
             <HStack gap={2}>
               <Button
                 label={s.saveDiagnosis}
                 variant="secondary"
                 size="sm"
-                onClick={() => onDiagnose(ticket.id, diagnosis, by)}
+                onClick={() => onDiagnose(ticket.id, diagnosis)}
               />
               <Button
                 label={s.closeWithDiagnosis}
                 size="sm"
-                onClick={() => onDiagnose(ticket.id, diagnosis, by, true)}
+                onClick={() => onDiagnose(ticket.id, diagnosis, true)}
               />
             </HStack>
           </VStack>
@@ -298,13 +357,9 @@ function TicketInspector({
         <MetadataListItem label={s.name}>
           <Text type="body">{ticket.name || '—'}</Text>
         </MetadataListItem>
-        <MetadataListItem label={s.age}>
+        <MetadataListItem label={s.ageGroup}>
           <Text type="body">
-            {ticket.age > 0
-              ? ticket.age
-              : ticket.age_group
-                ? ageGroupLabel(ticket.age_group, lang)
-                : '—'}
+            {ticket.age_band && ticket.age_band !== 'unknown' ? ageGroupLabel(ticket.age_band, lang) : '—'}
           </Text>
         </MetadataListItem>
         <MetadataListItem label={s.sex}>
@@ -550,11 +605,171 @@ function SexChart({stats, lang}: {stats: Stats | null; lang: UiLang}) {
   );
 }
 
-type View = 'dashboard' | 'queue' | 'settings';
+type View = 'dashboard' | 'queue' | 'facilities' | 'settings';
+
+const TIER_SVG_FILL: Record<string, string> = {
+  emergency: 'var(--color-error)',
+  urgent: 'var(--color-warning)',
+  self_care: 'var(--color-success)',
+};
+
+function FacilityMap({
+  facilities,
+  tickets,
+  lang,
+}: {
+  facilities: Facility[];
+  tickets: Ticket[];
+  lang: UiLang;
+}) {
+  const s = STRINGS[lang];
+  const LAT0 = 0.28, LAT1 = 0.39, LNG0 = 32.54, LNG1 = 32.62, W = 600, H = 420;
+  const X = (lng: number) => ((lng - LNG0) / (LNG1 - LNG0)) * W;
+  const Y = (lat: number) => H - ((lat - LAT0) / (LAT1 - LAT0)) * H;
+  const jitter = (id: number, salt: number) => ((id * 37 + salt * 11) % 17) - 8;
+  return (
+    <Card>
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center">
+          <StackItem size="fill">
+            <Heading level={3}>{s.catchmentMap}</Heading>
+          </StackItem>
+          <HStack gap={2} vAlign="center">
+            {(Object.keys(TIER_SVG_FILL) as string[]).map(t => (
+              <HStack gap={1} vAlign="center" key={t}>
+                <svg width="10" height="10" aria-hidden="true">
+                  <circle cx="5" cy="5" r="4" fill={TIER_SVG_FILL[t]} />
+                </svg>
+                <Text type="supporting" color="secondary">
+                  {tierLabel(t, lang)}
+                </Text>
+              </HStack>
+            ))}
+          </HStack>
+        </HStack>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={s.mapLabel}>
+          <rect x="0" y="0" width={W} height={H} fill="var(--color-background-muted)" rx="8" />
+          {facilities.map(f => (
+            <g key={f.id}>
+              <rect
+                x={X(f.lng) - 8}
+                y={Y(f.lat) - 8}
+                width="16"
+                height="16"
+                rx="3"
+                fill="var(--color-accent)"
+                stroke="var(--color-background-surface)"
+                strokeWidth="2"
+              />
+              <text x={X(f.lng) + 12} y={Y(f.lat) + 4} fontSize="11" fill="var(--color-text-primary)">
+                {f.name} ({f.load}/{f.slots})
+              </text>
+            </g>
+          ))}
+          {tickets
+            .filter(t => t.status === 'open' && t.facility_id > 0)
+            .map(t => {
+              const f = facilities.find(x => x.id === t.facility_id);
+              if (!f) return null;
+              return (
+                <circle
+                  key={t.id}
+                  cx={X(f.lng) + jitter(t.id, 1)}
+                  cy={Y(f.lat) + jitter(t.id, 2)}
+                  r={t.tier === 'emergency' ? 6 : 4}
+                  fill={TIER_SVG_FILL[t.tier] ?? 'var(--color-neutral)'}
+                >
+                  <title>{`${t.reference}: ${t.summary}`}</title>
+                </circle>
+              );
+            })}
+        </svg>
+        <Text type="supporting" color="secondary">
+          {s.mapNote}
+        </Text>
+      </VStack>
+    </Card>
+  );
+}
+
+function FacilityCards({
+  facilities,
+  queues,
+  onSeed,
+  lang,
+}: {
+  facilities: Facility[];
+  queues: Record<string, {facility: Facility; queue: QueueEntry[]}>;
+  onSeed: () => void;
+  lang: UiLang;
+}) {
+  const s = STRINGS[lang];
+  return (
+    <VStack gap={3}>
+      <HStack gap={2} vAlign="center">
+        <StackItem size="fill">
+          <Heading level={3}>{s.facilitiesQueues}</Heading>
+        </StackItem>
+        <Button label={s.seedSim} variant="secondary" size="sm" onClick={onSeed} />
+      </HStack>
+      <HStack gap={3}>
+        {facilities.map(f => (
+          <StackItem size="fill" key={f.id}>
+            <Card>
+              <VStack gap={2}>
+                <HStack gap={2} vAlign="center">
+                  <StackItem size="fill">
+                    <Text type="label">{f.name}</Text>
+                  </StackItem>
+                  <Token size="sm" color="default" label={facilityKindLabel(f.kind, lang)} />
+                </HStack>
+                <Text type="supporting" color="secondary">
+                  {fmt(s.queued, {load: f.load, slots: f.slots, wait: f.wait_min})}
+                </Text>
+                <ProgressBar
+                  label={fmt(s.facilityLoad, {name: f.name})}
+                  value={f.load}
+                  max={Math.max(f.slots, 1)}
+                  variant={f.load >= f.slots ? 'error' : f.load / Math.max(f.slots, 1) > 0.7 ? 'warning' : 'success'}
+                  isLabelHidden
+                />
+                <VStack gap={1}>
+                  {(queues[String(f.id)]?.queue ?? []).slice(0, 5).map(q => (
+                    <HStack gap={2} vAlign="center" key={q.id}>
+                      <StatusDot
+                        variant={q.tier === 'emergency' ? 'error' : q.tier === 'urgent' ? 'warning' : 'success'}
+                        label={tierLabel(q.tier, lang)}
+                      />
+                      <StackItem size="fill">
+                        <Text type="body">
+                          #{q.position} {q.reference}
+                        </Text>
+                      </StackItem>
+                      <Text type="supporting" color="secondary">
+                        ~{q.wait_min}m
+                      </Text>
+                    </HStack>
+                  ))}
+                  {(queues[String(f.id)]?.queue ?? []).length === 0 && (
+                    <Text type="supporting" color="secondary">
+                      {s.queueEmpty}
+                    </Text>
+                  )}
+                </VStack>
+              </VStack>
+            </Card>
+          </StackItem>
+        ))}
+      </HStack>
+    </VStack>
+  );
+}
 
 export default function Page() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [queues, setQueues] = useState<Record<string, {facility: Facility; queue: QueueEntry[]}>>({});
   const [tierFilter, setTierFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [lang, setLang] = useState<UiLang>('en');
@@ -581,40 +796,57 @@ export default function Page() {
       .catch(() => {});
   const loadStats = () =>
     fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => {});
+  const loadFacilities = () =>
+    fetch(`${API}/api/facilities`).then(r => r.json()).then(setFacilities).catch(() => {});
+  const loadQueues = () =>
+    fetch(`${API}/api/queues`).then(r => r.json()).then(setQueues).catch(() => {});
+  const seedSim = () =>
+    fetch(`${API}/api/sim/seed?n=24`, {method: 'POST'})
+      .then(() => {
+        load();
+        loadStats();
+        loadFacilities();
+        loadQueues();
+      })
+      .catch(() => {});
 
   useEffect(() => {
     load();
     loadStats();
+    loadFacilities();
+    loadQueues();
     const i = setInterval(() => {
       load();
       loadStats();
+      loadFacilities();
+      loadQueues();
     }, 3000);
     return () => clearInterval(i);
   }, []);
+
+  const refreshAll = () => {
+    load();
+    loadStats();
+    loadFacilities();
+    loadQueues();
+  };
 
   const close = (id: number) =>
     fetch(`${API}/api/tickets/${id}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({status: 'closed'}),
-    }).then(() => {
-      load();
-      loadStats();
-    });
+    }).then(refreshAll);
 
-  const diagnose = (id: number, diagnosis: string, by: string, andClose = false) =>
+  const diagnose = (id: number, diagnosis: string, andClose = false) =>
     fetch(`${API}/api/tickets/${id}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         status: andClose ? 'closed' : 'open',
         diagnosis,
-        diagnosed_by: by,
       }),
-    }).then(() => {
-      load();
-      loadStats();
-    });
+    }).then(refreshAll);
 
   const isNarrow = useMediaQuery('(max-width: 1024px)');
   const inspectorPanel = useResizable({defaultSize: 380, minSize: 320, maxSize: 480});
@@ -709,7 +941,7 @@ export default function Page() {
             />
             <LayoutPanel width={inspectorPanel.size} padding={0} label={s.ticketDetails}>
               {selected ? (
-                <TicketInspector ticket={selected} lang={lang} onClose={close} onDiagnose={diagnose} />
+                <TicketInspector ticket={selected} lang={lang} onClose={close} onDiagnose={diagnose} facilities={facilities} tickets={tickets} onSelect={setSelectedId} />
               ) : (
                 <EmptyState
                   title={s.noTicketSelected}
@@ -731,7 +963,7 @@ export default function Page() {
       contentPadding={0}
       sideNav={
         <SideNav
-          aria-label="Primary"
+          aria-label={s.navLabel}
           collapsible={isNarrow ? false : true}
           header={<SideNavHeading heading="Med-Intake" subheading={s.triageConsole} />}
           footer={
@@ -758,6 +990,15 @@ export default function Page() {
               onClick={() => setView('queue')}
               endContent={
                 <Token size="sm" color="red" label={String(openCount)} />
+              }
+            />
+            <SideNavItem
+              label={s.navFacilities}
+              icon={<Icon icon={BuildingOfficeIcon} size="sm" />}
+              isSelected={view === 'facilities'}
+              onClick={() => setView('facilities')}
+              endContent={
+                <Token size="sm" color="default" label={String(facilities.length)} />
               }
             />
           </SideNavSection>
@@ -797,6 +1038,22 @@ export default function Page() {
         </LayoutContent>
       )}
       {view === 'queue' && queue}
+      {view === 'facilities' && (
+        <LayoutContent padding={4}>
+          <VStack gap={4}>
+            <HStack gap={2} vAlign="center">
+              <StackItem size="fill">
+                <Heading level={1}>{s.facilitiesTitle}</Heading>
+              </StackItem>
+            </HStack>
+            <Text type="supporting" color="secondary">
+              {s.facilitiesNote}
+            </Text>
+            <FacilityMap facilities={facilities} tickets={tickets} lang={lang} />
+            <FacilityCards facilities={facilities} queues={queues} onSeed={seedSim} lang={lang} />
+          </VStack>
+        </LayoutContent>
+      )}
       {view === 'settings' && (
         <LayoutContent padding={4}>
           <VStack gap={4}>

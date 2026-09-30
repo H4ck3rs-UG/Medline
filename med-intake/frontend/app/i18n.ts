@@ -28,6 +28,15 @@ export const STRINGS = {
     showStatsPanel: "Show stats panel", hideStatsPanel: "Hide stats panel",
     populationStats: "Population stats", ticketDetails: "Ticket details", resizeInspector: "Resize inspector",
     ruleNote: "Rule reasons are shown as written by the rules engine.",
+    ageGroup: "Age group", routed: "Routed: {name}", routedQueue: "Routed: {name} · queue #{n}",
+    notRouted: "Not routed (self-care)", followUpOf: " · follow-up of {ref}",
+    patientMap: "Patient map — {n} linked visits", navLabel: "Primary", navFacilities: "Facilities",
+    facilitiesTitle: "Facility routing + queues",
+    facilitiesNote: "Every urgent/emergency ticket auto-routes to the best facility by distance, capability and load. Queues are emergency-first.",
+    catchmentMap: "Catchment map — Kampala (sim coords)", mapLabel: "Facility and ticket map",
+    mapNote: "Squares = facilities (load/slots). Dots = open routed tickets near their facility. Positions simulated.",
+    facilitiesQueues: "Facilities + live queues", seedSim: "Seed sim data",
+    queued: "{load}/{slots} queued · ~{wait} min wait", queueEmpty: "Queue empty", facilityLoad: "{name} load",
   },
   sw: {
     title: "Dashibodi ya Kliniki / CHW — kwa mpangilio wa uharaka",
@@ -53,6 +62,15 @@ export const STRINGS = {
     showStatsPanel: "Onyesha paneli ya takwimu", hideStatsPanel: "Ficha paneli ya takwimu",
     populationStats: "Takwimu za wagonjwa", ticketDetails: "Maelezo ya tiketi", resizeInspector: "Badilisha ukubwa wa paneli",
     ruleNote: "Sababu za kanuni zinaonyeshwa kama zilivyoandikwa na mfumo wa kanuni (Kiingereza).",
+    ageGroup: "Kundi la umri", routed: "Imeelekezwa: {name}", routedQueue: "Imeelekezwa: {name} · foleni #{n}",
+    notRouted: "Haijaelekezwa (kujitunza)", followUpOf: " · ufuatiliaji wa {ref}",
+    patientMap: "Ramani ya mgonjwa — ziara {n} zilizounganishwa", navLabel: "Kuu", navFacilities: "Vituo vya afya",
+    facilitiesTitle: "Uelekezaji kwa vituo na foleni",
+    facilitiesNote: "Kila tiketi ya haraka au dharura huelekezwa yenyewe kwenye kituo bora kwa umbali, uwezo na mzigo. Foleni huanza na dharura.",
+    catchmentMap: "Ramani ya eneo la huduma — Kampala (maeneo ya kuiga)", mapLabel: "Ramani ya vituo na tiketi",
+    mapNote: "Miraba = vituo (mzigo/nafasi). Nukta = tiketi wazi zilizoelekezwa karibu na kituo chao. Maeneo ni ya kuiga.",
+    facilitiesQueues: "Vituo na foleni za sasa", seedSim: "Weka data ya kuiga",
+    queued: "{load}/{slots} kwenye foleni · kusubiri ~dakika {wait}", queueEmpty: "Foleni iko tupu", facilityLoad: "Mzigo wa {name}",
   },
 } satisfies Record<UiLang, Record<string, string>>;
 
@@ -75,6 +93,12 @@ const SEXES: Record<string, Record<UiLang, string>> = {
   m: { en: "Male", sw: "Mwanaume" },
   f: { en: "Female", sw: "Mwanamke" },
   unknown: { en: "Unknown", sw: "Haijulikani" },
+};
+
+const FACILITY_KINDS: Record<string, Record<UiLang, string>> = {
+  hospital: { en: "Hospital", sw: "Hospitali" },
+  health_center: { en: "Health centre", sw: "Kituo cha afya" },
+  clinic: { en: "Clinic", sw: "Kliniki" },
 };
 
 const STATUSES: Record<string, Record<UiLang, string>> = {
@@ -136,6 +160,7 @@ export const fmt = (template: string, vars: Record<string, string | number>) =>
 export const tierLabel = (v: string, l: UiLang) => lookup(TIERS, v, l);
 export const ageGroupLabel = (v: string, l: UiLang) => lookup(AGE_GROUPS, v || "unknown", l);
 export const sexLabel = (v: string, l: UiLang) => lookup(SEXES, v || "unknown", l);
+export const facilityKindLabel = (v: string, l: UiLang) => lookup(FACILITY_KINDS, v, l);
 export const unknownLabel = (v: string, l: UiLang) => (!v || v === "unknown" ? AGE_GROUPS.unknown[l] : v);
 export const statusLabel = (v: string, l: UiLang) => lookup(STATUSES, v, l);
 export const callLangLabel = (v: string, l: UiLang) => lookup(CALL_LANGS, v || "en", l);
