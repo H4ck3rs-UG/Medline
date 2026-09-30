@@ -4,9 +4,15 @@
 2. Then up to ``max_followups`` questions chosen by value of information:
    for each unasked symptom, the trained model gives P(yes); the rules engine
    (``triage.rules.engine.decide``) says whether a yes would raise the urgency
-   tier. Score = P(yes) x (1 + escalation_weight x tiers raised). So a likely
-   symptom that could change the outcome (fever -> stiff neck) is asked before
-   one that is merely common.
+   tier. Score = P(yes) x (1 + escalation_weight x tiers raised): the expected
+   change to the outcome, so a question that could change it (fever -> stiff
+   neck, fever -> rash) beats one that just enriches the ticket, and between two
+   that could, likelihood still counts. A question that could raise the tier is
+   never dropped for being unlikely; the others need P(yes) >= min_probability.
+   (Simulated calls: weight 100 with that rule gave 99.4% tier agreement with 2
+   follow-ups, vs 99.2% for lower weights or a likelihood floor on every question.
+   Ranking strictly by tiers raised, ignoring likelihood, asked absurd questions,
+   such as pregnancy bleeding for a child.)
 
 The rules engine still makes the decision; the policy only chooses questions,
 and every question is a fixed line from ``bank.BANK``.
@@ -38,7 +44,7 @@ class FollowUpPolicy:
         max_followups: int = 3,
         danger_first: bool = True,
         min_probability: float = 0.05,
-        escalation_weight: float = 4.0,
+        escalation_weight: float = 100.0,
     ):
         self.model = model if model is not None else SymptomModel.load()
         self.max_followups = max_followups
@@ -71,9 +77,9 @@ class FollowUpPolicy:
             if q.id in asked or q.symptom in yes or q.symptom in DANGER_SIGNS:
                 continue
             p = self.model.p_yes(q.symptom, yes, no) if self.model else 0.0
-            if p < self.min_probability:
-                continue
             raised = max(decide(_with(report, q.symptom)).tier.rank - current, 0)
+            if not raised and p < self.min_probability:
+                continue
             out.append(Ranked(q, p * (1 + self.escalation_weight * raised), p, raised))
         return sorted(out, key=lambda r: r.score, reverse=True)
 

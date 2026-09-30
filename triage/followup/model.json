@@ -946,7 +946,7 @@
   }
  },
  "version": 1,
- "created": "2026-09-30T13:38:39+00:00",
+ "created": "2026-09-30T14:09:39+00:00",
  "features": "per symptom: answered yes / answered no (unasked = neither)",
  "training": {
   "datasets": {
@@ -1023,16 +1023,16 @@
     {
      "policy": "trained",
      "followups": 1,
-     "tier_agreement": 0.959,
-     "under_triage": 0.041,
-     "extra_symptoms_found_per_call": 0.246
+     "tier_agreement": 0.967,
+     "under_triage": 0.033,
+     "extra_symptoms_found_per_call": 0.202
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 1,
-     "tier_agreement": 0.9687,
-     "under_triage": 0.0313,
-     "extra_symptoms_found_per_call": 0.3
+     "tier_agreement": 0.9767,
+     "under_triage": 0.0233,
+     "extra_symptoms_found_per_call": 0.146
     },
     {
      "policy": "most_common_first",
@@ -1044,23 +1044,23 @@
     {
      "policy": "random",
      "followups": 1,
-     "tier_agreement": 0.8687,
-     "under_triage": 0.1313,
-     "extra_symptoms_found_per_call": 0.084
+     "tier_agreement": 0.8763,
+     "under_triage": 0.1237,
+     "extra_symptoms_found_per_call": 0.093
     },
     {
      "policy": "trained",
      "followups": 2,
-     "tier_agreement": 0.9823,
-     "under_triage": 0.0177,
-     "extra_symptoms_found_per_call": 0.45
+     "tier_agreement": 0.99,
+     "under_triage": 0.01,
+     "extra_symptoms_found_per_call": 0.33
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 2,
-     "tier_agreement": 0.978,
-     "under_triage": 0.022,
-     "extra_symptoms_found_per_call": 0.611
+     "tier_agreement": 0.99,
+     "under_triage": 0.01,
+     "extra_symptoms_found_per_call": 0.316
     },
     {
      "policy": "most_common_first",
@@ -1072,23 +1072,23 @@
     {
      "policy": "random",
      "followups": 2,
-     "tier_agreement": 0.88,
-     "under_triage": 0.12,
-     "extra_symptoms_found_per_call": 0.18
+     "tier_agreement": 0.8847,
+     "under_triage": 0.1153,
+     "extra_symptoms_found_per_call": 0.197
     },
     {
      "policy": "trained",
      "followups": 3,
-     "tier_agreement": 0.9833,
-     "under_triage": 0.0167,
-     "extra_symptoms_found_per_call": 0.669
+     "tier_agreement": 0.9953,
+     "under_triage": 0.0047,
+     "extra_symptoms_found_per_call": 0.546
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 3,
-     "tier_agreement": 0.9797,
-     "under_triage": 0.0203,
-     "extra_symptoms_found_per_call": 0.858
+     "tier_agreement": 0.994,
+     "under_triage": 0.006,
+     "extra_symptoms_found_per_call": 0.528
     },
     {
      "policy": "most_common_first",
@@ -1100,23 +1100,23 @@
     {
      "policy": "random",
      "followups": 3,
-     "tier_agreement": 0.888,
-     "under_triage": 0.112,
-     "extra_symptoms_found_per_call": 0.274
+     "tier_agreement": 0.8923,
+     "under_triage": 0.1077,
+     "extra_symptoms_found_per_call": 0.281
     },
     {
      "policy": "trained",
      "followups": 5,
-     "tier_agreement": 0.985,
-     "under_triage": 0.015,
-     "extra_symptoms_found_per_call": 1.046
+     "tier_agreement": 0.9963,
+     "under_triage": 0.0037,
+     "extra_symptoms_found_per_call": 0.88
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 5,
-     "tier_agreement": 0.9843,
-     "under_triage": 0.0157,
-     "extra_symptoms_found_per_call": 1.079
+     "tier_agreement": 0.9957,
+     "under_triage": 0.0043,
+     "extra_symptoms_found_per_call": 0.916
     },
     {
      "policy": "most_common_first",
@@ -1128,9 +1128,9 @@
     {
      "policy": "random",
      "followups": 5,
-     "tier_agreement": 0.903,
-     "under_triage": 0.097,
-     "extra_symptoms_found_per_call": 0.446
+     "tier_agreement": 0.9103,
+     "under_triage": 0.0897,
+     "extra_symptoms_found_per_call": 0.47
     }
    ]
   },
@@ -1168,16 +1168,16 @@
     {
      "policy": "trained",
      "followups": 1,
-     "tier_agreement": 0.9677,
-     "under_triage": 0.0323,
-     "extra_symptoms_found_per_call": 0.256
+     "tier_agreement": 0.9757,
+     "under_triage": 0.0243,
+     "extra_symptoms_found_per_call": 0.154
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 1,
-     "tier_agreement": 0.9687,
-     "under_triage": 0.0313,
-     "extra_symptoms_found_per_call": 0.3
+     "tier_agreement": 0.9767,
+     "under_triage": 0.0233,
+     "extra_symptoms_found_per_call": 0.146
     },
     {
      "policy": "most_common_first",
@@ -1189,23 +1189,23 @@
     {
      "policy": "random",
      "followups": 1,
-     "tier_agreement": 0.8687,
-     "under_triage": 0.1313,
-     "extra_symptoms_found_per_call": 0.084
+     "tier_agreement": 0.8763,
+     "under_triage": 0.1237,
+     "extra_symptoms_found_per_call": 0.093
     },
     {
      "policy": "trained",
      "followups": 2,
-     "tier_agreement": 0.9793,
-     "under_triage": 0.0207,
-     "extra_symptoms_found_per_call": 0.558
+     "tier_agreement": 0.99,
+     "under_triage": 0.01,
+     "extra_symptoms_found_per_call": 0.263
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 2,
-     "tier_agreement": 0.978,
-     "under_triage": 0.022,
-     "extra_symptoms_found_per_call": 0.611
+     "tier_agreement": 0.99,
+     "under_triage": 0.01,
+     "extra_symptoms_found_per_call": 0.316
     },
     {
      "policy": "most_common_first",
@@ -1217,23 +1217,23 @@
     {
      "policy": "random",
      "followups": 2,
-     "tier_agreement": 0.88,
-     "under_triage": 0.12,
-     "extra_symptoms_found_per_call": 0.18
+     "tier_agreement": 0.8847,
+     "under_triage": 0.1153,
+     "extra_symptoms_found_per_call": 0.197
     },
     {
      "policy": "trained",
      "followups": 3,
-     "tier_agreement": 0.9837,
-     "under_triage": 0.0163,
-     "extra_symptoms_found_per_call": 0.773
+     "tier_agreement": 0.994,
+     "under_triage": 0.006,
+     "extra_symptoms_found_per_call": 0.456
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 3,
-     "tier_agreement": 0.9797,
-     "under_triage": 0.0203,
-     "extra_symptoms_found_per_call": 0.858
+     "tier_agreement": 0.994,
+     "under_triage": 0.006,
+     "extra_symptoms_found_per_call": 0.528
     },
     {
      "policy": "most_common_first",
@@ -1245,23 +1245,23 @@
     {
      "policy": "random",
      "followups": 3,
-     "tier_agreement": 0.888,
-     "under_triage": 0.112,
-     "extra_symptoms_found_per_call": 0.274
+     "tier_agreement": 0.8923,
+     "under_triage": 0.1077,
+     "extra_symptoms_found_per_call": 0.281
     },
     {
      "policy": "trained",
      "followups": 5,
-     "tier_agreement": 0.987,
-     "under_triage": 0.013,
-     "extra_symptoms_found_per_call": 1.062
+     "tier_agreement": 0.9967,
+     "under_triage": 0.0033,
+     "extra_symptoms_found_per_call": 0.821
     },
     {
      "policy": "rules_+_base_rate",
      "followups": 5,
-     "tier_agreement": 0.9843,
-     "under_triage": 0.0157,
-     "extra_symptoms_found_per_call": 1.079
+     "tier_agreement": 0.9957,
+     "under_triage": 0.0043,
+     "extra_symptoms_found_per_call": 0.916
     },
     {
      "policy": "most_common_first",
@@ -1273,9 +1273,9 @@
     {
      "policy": "random",
      "followups": 5,
-     "tier_agreement": 0.903,
-     "under_triage": 0.097,
-     "extra_symptoms_found_per_call": 0.446
+     "tier_agreement": 0.9103,
+     "under_triage": 0.0897,
+     "extra_symptoms_found_per_call": 0.47
     }
    ]
   }

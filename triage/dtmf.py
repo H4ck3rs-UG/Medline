@@ -108,6 +108,31 @@ MENU: list[MenuQuestion] = [
 
 _BY_ID = {q.id: q for q in MENU}
 
+# Yes/no questions for the symptoms the keypad MENU doesn't cover. The follow-up
+# policy (triage.followup) picks from these and the MENU's own symptom questions.
+# Swahili drafts need native-speaker review.
+FOLLOW_UP_QUESTIONS: list[MenuQuestion] = [
+    _yes_no("fu_fast_breathing", "Is the patient breathing faster than usual?",
+            "Je, mgonjwa anapumua haraka kuliko kawaida?"),
+    _yes_no("fu_vomiting_everything", "Does the patient vomit everything they eat or drink?",
+            "Je, mgonjwa anatapika kila anachokula au kunywa?"),
+    _yes_no("fu_stiff_neck", "Does the patient have a stiff neck?", "Je, mgonjwa ana shingo ngumu?"),
+    _yes_no("fu_headache", "Does the patient have a headache?", "Je, mgonjwa ana maumivu ya kichwa?"),
+    _yes_no("fu_abdominal_pain", "Does the patient have pain in the belly?", "Je, mgonjwa ana maumivu ya tumbo?"),
+    _yes_no("fu_sore_throat", "Does the patient have a sore throat?", "Je, mgonjwa ana maumivu ya koo?"),
+    _yes_no("fu_runny_nose", "Does the patient have a runny or blocked nose?", "Je, mgonjwa ana mafua au pua iliyoziba?"),
+    _yes_no("fu_body_aches", "Does the patient have aches in the body or joints?",
+            "Je, mgonjwa ana maumivu ya mwili au viungo?"),
+    _yes_no("fu_ear_pain", "Does the patient have ear pain?", "Je, mgonjwa ana maumivu ya sikio?"),
+    _yes_no("fu_painful_urination", "Does it hurt when the patient passes urine?",
+            "Je, mgonjwa anasikia maumivu wakati wa kukojoa?"),
+    _yes_no("fu_injury", "Has the patient been injured, for example by a fall or an accident?",
+            "Je, mgonjwa ameumia, kwa mfano kwa kuanguka au ajali?"),
+    # The keypad MENU infers this from its pregnant + heavy bleeding answers.
+    _yes_no("fu_bleeding_in_pregnancy", "Is the patient pregnant and bleeding from the vagina?",
+            "Je, mgonjwa ni mjamzito na anatokwa na damu ukeni?"),
+]
+
 # Lines around the questions. Same shape as MENU entries: English script plus
 # written translations. The Swahili is a draft that needs native-speaker review.
 SYSTEM_PROMPTS: dict[str, dict[str, str]] = {
@@ -201,7 +226,7 @@ def recording_script(language: str) -> list[dict[str, object]]:
     for prompt_id, texts in SYSTEM_PROMPTS.items():
         if prompt_id != LANGUAGE_MENU:
             rows.append((prompt_id, texts.get(language), texts["en"]))
-    for question in MENU:
+    for question in MENU + FOLLOW_UP_QUESTIONS:
         written = question.prompt if language == "en" else question.translations.get(language)
         rows.append((question.id, written, question.prompt))
     for key in ("closing_emergency", "closing_urgent", "closing_self_care"):

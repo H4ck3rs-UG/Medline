@@ -59,9 +59,19 @@ def test_stops_after_max_followups():
     assert policy.next_question(report(S.FEVER), asked) is None
 
 
-def test_unlikely_questions_are_not_asked():
-    policy = FollowUpPolicy(SymptomModel({"prior": {}, "models": {}}))
-    assert policy.next_question(report(S.COUGH), set(DANGER_IDS)) is None
+def test_unlikely_questions_are_asked_only_if_they_could_change_the_tier():
+    policy = FollowUpPolicy(SymptomModel({"prior": {}, "models": {}}))  # every P(yes) = 0
+    ranked = policy.rank(report(S.COUGH), set(DANGER_IDS))
+    assert ranked and all(r.tiers_raised > 0 for r in ranked)
+    assert S.HEADACHE not in {r.question.symptom for r in ranked}  # can't change a cough's tier
+
+
+def test_ranking_is_expected_change_to_the_outcome():
+    ranks = lambda prior: [r.question.symptom for r in  # noqa: E731
+                           FollowUpPolicy(SymptomModel({"prior": prior, "models": {}})).rank(report(S.FEVER), set(DANGER_IDS))]
+    # rash (fever + rash -> urgent) vs stiff neck (fever + stiff neck -> emergency)
+    assert ranks({"rash": 0.6, "stiff_neck": 0.01})[0] == S.RASH  # emergency possible but very unlikely
+    assert ranks({"rash": 0.6, "stiff_neck": 0.4})[0] == S.STIFF_NECK  # both plausible: the emergency first
 
 
 def test_shipped_model_loads_and_gives_probabilities():
@@ -89,3 +99,25 @@ def test_mlp_format_runs_without_ml_libraries():
         },
     })
     assert net.p_yes(S.STIFF_NECK, {S.FEVER}, set()) > net.p_yes(S.STIFF_NECK, set(), set())
+
+
+def test_interview_never_asks_pregnancy_questions_when_impossible():
+    from triage.followup import Interview
+
+    for sex, age in [("M", "adult"), ("F", "child"), ("F", "elderly")]:
+        iv = Interview(SymptomModel({"prior": {}, "models": {}}) and FollowUpPolicy(SymptomModel({"prior": {}, "models": {}})),
+                       sex=sex, age_group=age)
+        iv.add_mentioned([S.FEVER])
+        while (q := iv.next_question()) is not None:
+            iv.answer(q.id, {"duration": "1", "severity": "1"}.get(q.id, "2"))
+        assert "pregnant" not in iv.asked and "fu_bleeding_in_pregnancy" not in iv.asked, (sex, age)
+
+
+def test_pregnant_caller_gets_the_bleeding_check():
+    from triage.followup import Interview
+
+    iv = Interview(FollowUpPolicy(SymptomModel({"prior": {}, "models": {}})), sex="F", age_group="adult")
+    iv.add_mentioned([S.ABDOMINAL_PAIN])
+    while (q := iv.next_question()) is not None:
+        iv.answer(q.id, {"duration": "1", "severity": "1", "pregnant": "1"}.get(q.id, "2"))
+    assert iv.asked[iv.asked.index("pregnant") + 2] == "fu_bleeding_in_pregnancy"  # after severity

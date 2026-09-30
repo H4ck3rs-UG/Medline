@@ -2,7 +2,8 @@
 which fixed, pre-translated question to ask next. See training/followup/README.md."""
 
 from triage.followup.bank import BANK, DANGER_SIGNS, NEW_PROMPTS, FollowUpQuestion
+from triage.followup.interview import Interview
 from triage.followup.model import SymptomModel
 from triage.followup.policy import FollowUpPolicy, Ranked
 
-__all__ = ["BANK", "DANGER_SIGNS", "NEW_PROMPTS", "FollowUpPolicy", "FollowUpQuestion", "Ranked", "SymptomModel"]
+__all__ = ["BANK", "DANGER_SIGNS", "Interview", "NEW_PROMPTS", "FollowUpPolicy", "FollowUpQuestion", "Ranked", "SymptomModel"]

@@ -8,7 +8,7 @@ answers so far ─► trained symptom model ─► P(yes) for each unasked sympt
 ```
 
 1. The IMCI danger signs are always asked first, in a fixed order.
-2. Then up to 3 follow-ups, scored as `P(yes) × (1 + 4 × tiers a yes would raise)`.
+2. Then up to 2 follow-ups, scored as `P(yes) × (1 + 100 × tiers a yes would raise)`: the expected change to the outcome. A question that could raise the tier is never dropped for being unlikely.
 3. Every question is a fixed line in `triage/followup/bank.py`, with English text and a Swahili draft. So questions can be recorded, translated and cached like the keypad menu. There's no free text to machine-translate or check during a call.
 
 ## Files
@@ -19,7 +19,7 @@ answers so far ─► trained symptom model ─► P(yes) for each unasked sympt
 | `symptom_map.py` | Maps dataset symptom names to our 24 codes. **Needs clinician review.** |
 | `train.py` | Trains, evaluates and writes `triage/followup/model.json` |
 | `data/` | Raw and processed data. Gitignored: the main file is 190 MB, over GitHub's limit |
-| `triage/followup/` | Runtime code: `bank.py` (questions), `model.py` (loads the JSON), `policy.py` (picks the next question) |
+| `triage/followup/` | Runtime code: `bank.py` (questions), `model.py` (loads the JSON), `policy.py` (picks the next question), `interview.py` (runs a call's questions) |
 
 ## Datasets
 
@@ -46,18 +46,20 @@ python training/followup/train.py                    # ~3 min on a laptop CPU, n
 
 It then simulates 3,000 calls on held-out data and exports the logistic model, unless the network is more than 1 point better. The runtime needs no ML libraries for either model. Options: `--model logistic|mlp`, `--hidden 32`, `--cases 3000`.
 
-## Results (simulated calls, 3 follow-ups after the danger signs)
+## Results (simulated calls, 2 follow-ups after the danger signs, as on the phone line)
 
 | Question order | Matches full-information tier | Under-triaged |
 |---|---|---|
 | Danger signs only | 86.4% | 13.6% |
-| Random | 88.8% | 11.2% |
-| Most common first | 96.2% | 3.8% |
-| Rules + base rates (no training) | 98.0% | 2.0% |
-| **Trained policy** (logistic / mlp) | **98.3% / 98.4%** | **1.7% / 1.6%** |
+| Random | 88.5% | 11.5% |
+| Most common first | 91.3% | 8.7% |
+| Rules + base rates (no training) | 99.0% | 1.0% |
+| **Trained policy** (logistic / mlp) | **99.0% / 99.0%** | **1.0% / 1.0%** |
+
+With 3 follow-ups the trained policy reaches 99.5%, but the extra question costs about 7 seconds per call.
 
 Read these honestly:
-- **The design does most of the work.** Asking what could change the rules engine's decision is what helps. Training adds about 0.3 points.
+- **The design does all of the work here.** Asking what could change the rules engine's decision is what helps. On this data, training adds nothing measurable over base rates (99.0% both).
 - **The learned likelihoods are weak.** AUC is mostly 0.5–0.7, because the datasets collapse to only 1,611 distinct combinations of our 24 codes.
 - **The evaluation uses the same kind of data as training:** synthetic, and not from Uganda.
 
@@ -83,8 +85,6 @@ decision = decide(report)                  # the rules engine still decides the 
 
 `policy.rank(report, asked)` returns every candidate with its `p_yes` and `tiers_raised`, which is useful for logging why a question was asked.
 
-**Where it plugs in (not wired up yet):**
-- **Speech path** (`med-intake/backend/app/voice.py`): after the caller describes their symptoms and extraction runs, ask the policy's questions with `<GetDigits>` before triage. That brings follow-up questions to the phone line with no LLM.
-- **Keypad path:** replace `dtmf.next_question(answers)` (fixed order) with the policy, so the menu gets shorter and adapts to the caller.
-- **LLM harness** (`triage/harness.py`): use `q.text(language)` as the reply when the model's reply is rejected or missing.
-- **Recordings and cache:** the new questions in `triage.followup.NEW_PROMPTS` (`fu_*` ids) need adding to the recording scripts and Sunbird warm-up, like the keypad prompts.
+**Where it's wired in:** `triage/followup/interview.py` (`Interview`) runs the structured part of every phone call in `med-intake/backend/app/voice.py`, on both paths:
+danger signs → screening (keypad callers, or speech that matched no symptom) → how long / pregnant / how bad → emergency checks (a yes that would make it an emergency, e.g. fever → stiff neck) → up to 2 follow-ups from this policy → rules engine.
+The follow-up questions (`fu_*`) are in the recording scripts and the Sunbird warm-up like every other prompt. For call lengths, see `med-intake/scripts/estimate_call_time.py`.

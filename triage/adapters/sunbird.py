@@ -74,12 +74,15 @@ class SunbirdClient:
         *,
         filename: str = "call.mp3",
         content_type: str = "audio/mpeg",
+        timeout: float | None = None,
+        retries: int | None = None,
     ) -> str:
-        """POST /tasks/audio/transcriptions. ``language`` is required by Sunbird."""
+        """POST /tasks/audio/transcriptions. ``language`` is required by Sunbird.
+        Usually 4-5 s, but it has taken 30+ s, so pass a short ``timeout`` on a live call."""
         body, ctype = _multipart(
             {"language": code(language)}, {"audio": (filename, audio, content_type)}
         )
-        data = self._request("/tasks/audio/transcriptions", body, ctype)
+        data = self._request("/tasks/audio/transcriptions", body, ctype, timeout, retries)
         return (data.get("audio_transcription") or "").strip()
 
     def speak(
