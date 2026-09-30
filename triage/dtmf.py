@@ -117,6 +117,37 @@ SYSTEM_PROMPTS: dict[str, dict[str, str]] = {
         "en": "For English, press 1. Kwa Kiswahili, bonyeza 2. For Luganda, press 3. "
         "For Runyankole, press 4.",
     },
+    # Returning callers quote the reference number from their last call.
+    "visit_type": {
+        "en": "For a new visit, press 1. To follow up on an earlier call with your reference number, press 9.",
+        "sw": "Kwa ziara mpya, bonyeza 1. Kufuatilia simu ya awali kwa namba yako ya kumbukumbu, bonyeza 9.",
+    },
+    "ref_prompt": {
+        "en": "Enter your reference number, then press the hash key.",
+        "sw": "Weka namba yako ya kumbukumbu, kisha bonyeza kitufe cha reli.",
+    },
+    "ref_not_found": {
+        "en": "We could not find that reference number.",
+        "sw": "Hatukuipata namba hiyo ya kumbukumbu.",
+    },
+    "welcome_back": {
+        "en": "Welcome back. We found your earlier call. Please tell us what has changed since then.",
+        "sw": "Karibu tena. Tumeipata simu yako ya awali. Tafadhali tueleze kilichobadilika tangu wakati huo.",
+    },
+    # Spoken before the digits of the new ticket's reference ("MED 4 2").
+    "your_reference": {
+        "en": "Your reference number is",
+        "sw": "Namba yako ya kumbukumbu ni",
+    },
+    "not_heard": {
+        "en": "Sorry, we could not hear you clearly.",
+        "sw": "Samahani, hatukukusikia vizuri.",
+    },
+    # Speech failed twice: the call continues on the keypad menu instead.
+    "use_keypad": {
+        "en": "Please answer the next questions with your keypad.",
+        "sw": "Tafadhali jibu maswali yanayofuata kwa kubonyeza namba.",
+    },
     # Asked by the phone backend before the symptom questions, for the ticket and
     # the dashboard stats. Age uses the MENU "age_group" question, asked once.
     "bio_sex": {

@@ -12,3 +12,4 @@ node_modules/
 backend/.env
 __pycache__/
 .venv/
+med-intake/backend/tts_cache/
