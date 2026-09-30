@@ -10,27 +10,27 @@ import {Blockquote} from '@astryxdesign/core/Blockquote';
 import {Divider} from '@astryxdesign/core/Divider';
 import {StatusDot} from '@astryxdesign/core/StatusDot';
 import {Token} from '@astryxdesign/core/Token';
+import {Collapsible} from '@astryxdesign/core/Collapsible';
+import {Center} from '@astryxdesign/core/Center';
 import {MedLineWordmark} from './logo';
 import {ChwDesk, Clinic, FeaturePhone, Listening, MapPin, Nurse, PersonCalling, Phone} from './art';
 
-function Frame({children, ratio = '16/9', label}: {children: React.ReactNode; ratio?: string; label: string}) {
+function Frame({children, label}: {children: React.ReactNode; label: string}) {
   return (
     <Card>
       <VStack gap={2}>
         <Text type="label" color="secondary">{label}</Text>
-        <div
+        <Center
+          axis="both"
           style={{
-            aspectRatio: ratio,
+            aspectRatio: '16/9',
             borderRadius: 'var(--radius-container)',
             backgroundColor: 'var(--color-background-muted)',
             boxShadow: 'var(--shadow-med)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             overflow: 'hidden',
           }}>
           {children}
-        </div>
+        </Center>
       </VStack>
     </Card>
   );
@@ -88,14 +88,61 @@ const STEPS = [
 
 const STRIP = ['Voice call in', 'AI understands', 'Rules decide', 'Human closes loop'];
 
+const PILOT_TIERS = [
+  {
+    title: 'Pilot',
+    desc: 'One facility, prove routing',
+    price: 'Free',
+    cta: 'Start a pilot',
+    points: ['1 facility + queue', 'Voice intake line', 'EN + Kiswahili', 'Triage audit trail', 'CHW callback queue'],
+  },
+  {
+    title: 'District',
+    desc: 'Multi-facility catchment',
+    price: 'Custom',
+    cta: 'Call Medline AI',
+    points: ['Up to 10 facilities', '4 languages + keypad', 'Live catchment map', 'Load + wait times', 'Follow-up chaining'],
+  },
+  {
+    title: 'National',
+    desc: 'Scale + oversight',
+    price: 'Custom',
+    cta: 'Contact us',
+    points: ['Unlimited facilities', 'Custom integrations', 'Clinician review board', 'Analytics + reports', 'SLA uptime'],
+  },
+];
+
+const FAQ = [
+  {
+    q: 'Does MedLine AI diagnose patients?',
+    a: 'No. It tiers (emergency / urgent / self-care) and routes — to self-care advice, a health-worker callback, or the nearest capable clinic. Only qualified health workers diagnose and treat.',
+  },
+  {
+    q: 'What phones does it work on?',
+    a: 'Any phone. English and Kiswahili callers speak freely; Luganda and Runyankole callers use a keypress menu. No app, no data needed.',
+  },
+  {
+    q: 'How long does a call take?',
+    a: 'About 2.5 minutes on average: danger-sign questions, then duration / pregnancy / severity, then routing with an SMS reference like MED-42.',
+  },
+  {
+    q: 'What happens when speech recognition fails?',
+    a: 'Fail-safe: re-ask once, then switch to keypad questions. Three invalid keys means an incomplete report — routed urgent minimum, never self-care.',
+  },
+  {
+    q: 'Can we pilot with one facility?',
+    a: 'Yes. Start with one facility and its queue, prove routing, then scale to district level. Call +256 323 200 717.',
+  },
+];
+
 export default function Landing() {
   return (
     <LayoutContent padding={4}>
       <VStack gap={4}>
         <HStack gap={2} vAlign="center">
           <StackItem size="fill"><MedLineWordmark /></StackItem>
-          <Badge label="Pilot live in Kampala" variant="success" />
-          <Button label="Open dashboard" variant="secondary" size="sm" onClick={() => (window.location.href = '/')} />
+          <Button label="Staff login" variant="secondary" size="sm" onClick={() => (window.location.href = '/login')} />
+          <Button label="Open dashboard" variant="secondary" size="sm" onClick={() => (window.location.href = '/dashboard')} />
         </HStack>
 
         {/* 1. Hero */}
@@ -111,7 +158,8 @@ export default function Landing() {
                   callback, or the nearest clinic. Triage and routing, never diagnosis.
                 </Text>
                 <HStack gap={2}>
-                  <Button label="See a live demo call" size="sm" onClick={() => (window.location.href = '/')} />
+                  <Button label="See a live demo call" size="sm" onClick={() => (window.location.href = '/dashboard')} />
+                  <Button label="Call MedLine AI" variant="secondary" size="sm" onClick={() => (window.location.href = 'tel:+256323200717')} />
                   <Button label="Read the research" variant="secondary" size="sm" onClick={() => (window.location.href = '/landing#proof')} />
                 </HStack>
                 <HStack gap={2} vAlign="center">
@@ -119,11 +167,24 @@ export default function Landing() {
                   <Token size="sm" color="default" label="4 languages" />
                   <Token size="sm" color="default" label="No app needed" />
                 </HStack>
+                <Heading level={1}>
+                  <a href="tel:+256323200717" style={{color: 'var(--color-accent)', textDecoration: 'none'}}>
+                    +256 323 200 717
+                  </a>
+                </Heading>
               </VStack>
             </StackItem>
             <PersonCalling />
           </HStack>
         </Card>
+
+        {/* Logo strip (ported from genesis trusted-companies) */}
+        <Center axis="horizontal">
+          <VStack gap={1} hAlign="center">
+            <MedLineWordmark size={44} />
+            <Text type="supporting" color="secondary">MedLine AI — voice-first triage for Africa</Text>
+          </VStack>
+        </Center>
 
         {/* 2. Problem */}
         <Heading level={2}>Clinics are full. Phones are everywhere.</Heading>
@@ -166,10 +227,10 @@ export default function Landing() {
         <Heading level={2}>Built for the call and the clinic</Heading>
         <HStack gap={3}>
           <StackItem size="fill">
-            <Frame label="Live call / IVR flow — 16:9" ratio="16/9"><MockIVR /></Frame>
+            <Frame label="Live call / IVR flow — 16:9"><MockIVR /></Frame>
           </StackItem>
           <StackItem size="fill">
-            <Frame label="Clinic dashboard queue — 16:9" ratio="16/9"><MockQueue /></Frame>
+            <Frame label="Clinic dashboard queue — 16:9"><MockQueue /></Frame>
           </StackItem>
         </HStack>
 
@@ -239,14 +300,58 @@ export default function Landing() {
           </StackItem>
         </HStack>
 
-        {/* 8. Footer CTA + nav */}
+        {/* 8. Pilot pricing (ported from genesis pricing-plans) */}
+        <Heading level={2}>Pilot pricing</Heading>
+        <Text type="body" color="secondary">Start with one facility. Scale when routing proves out.</Text>
+        <HStack gap={3}>
+          {PILOT_TIERS.map(t => (
+            <StackItem size="fill" key={t.title}>
+              <Card>
+                <VStack gap={2}>
+                  <Token size="sm" color="default" label={t.title} />
+                  <Heading level={3}>{t.price}</Heading>
+                  <Text type="body" color="secondary">{t.desc}</Text>
+                  <Divider />
+                  <VStack gap={1}>
+                    {t.points.map(p => (
+                      <Text type="body" key={p}>· {p}</Text>
+                    ))}
+                  </VStack>
+                  <Button
+                    label={t.cta}
+                    size="sm"
+                    variant={t.title === 'District' ? 'primary' : 'secondary'}
+                    onClick={() => (window.location.href = t.title === 'District' ? 'tel:+256323200717' : '/dashboard')}
+                  />
+                </VStack>
+              </Card>
+            </StackItem>
+          ))}
+        </HStack>
+
+        {/* 9. FAQ (ported from genesis faq-section, Medline content) */}
+        <Heading level={2}>FAQ</Heading>
+        <VStack gap={2}>
+          {FAQ.map(f => (
+            <Collapsible key={f.q} trigger={f.q} defaultIsOpen={false}>
+              <Text type="body" color="secondary">{f.a}</Text>
+            </Collapsible>
+          ))}
+        </VStack>
+
+        {/* 10. Footer CTA + nav */}
         <Card>
           <VStack gap={3}>
             <Heading level={2}>Bring MedLine AI to your district</Heading>
             <Text type="body" color="secondary">Pilot with one facility. Route every call to the right care.</Text>
+            <Heading level={1}>
+              <a href="tel:+256323200717" style={{color: 'var(--color-accent)', textDecoration: 'none'}}>
+                +256 323 200 717
+              </a>
+            </Heading>
             <HStack gap={2}>
-              <Button label="Start a pilot" size="sm" onClick={() => (window.location.href = '/')} />
-              <Button label="Talk to us" variant="secondary" size="sm" onClick={() => (window.location.href = '/')} />
+              <Button label="Start a pilot" size="sm" onClick={() => (window.location.href = '/dashboard')} />
+              <Button label="Call +256 323 200 717" variant="secondary" size="sm" onClick={() => (window.location.href = 'tel:+256323200717')} />
             </HStack>
           </VStack>
         </Card>

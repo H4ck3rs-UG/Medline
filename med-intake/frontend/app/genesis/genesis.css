@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+    --font-sans: 'Poppins', sans-serif;
+}
+
+.genesis-scope {
+    background-color: light-dark(#ffffff, #000000);
+    color: light-dark(#111111, #ffffff);
+    @apply text-sm antialiased;
+}
+
+:root {
+    --genesis-accent: #ff630b;
+}
+
+.genesis-scope {
+    --color-accent: #ff630b;
+    --color-background-accent: #ff630b;
+    --color-background-accent-hover: #d65409;
+    --color-border-accent: #ff630b;
+    --color-text-accent: #ff630b;
+}
+
+.genesis-scope ::selection {
+    background: var(--genesis-accent);
+    color: white;
+}
+
+@layer components {
+    .genesis-scope .glass {
+        background-color: light-dark(rgb(0 0 0 / 0.05), rgb(255 255 255 / 0.1));
+        border: 1px solid light-dark(rgb(0 0 0 / 0.12), rgb(255 255 255 / 0.2));
+    }
+
+    .genesis-scope .btn {
+        @apply cursor-pointer rounded-full px-12 py-4 font-medium text-white transition hover:opacity-90 active:scale-98;
+    }
+}
+
+/* Light-mode readability: flip hardcoded dark-theme text/surface utilities */
+html[data-theme='light'] .genesis-scope .text-white {
+    color: #111111;
+}
+html[data-theme='light'] .genesis-scope .text-gray-100 {
+    color: #374151;
+}
+html[data-theme='light'] .genesis-scope .text-gray-200 {
+    color: #4b5563;
+}
+html[data-theme='light'] .genesis-scope .text-gray-300 {
+    color: #6b7280;
+}
+html[data-theme='light'] .genesis-scope .border-white\/20 {
+    border-color: rgb(0 0 0 / 0.12);
+}
+html[data-theme='light'] .genesis-scope .bg-black\/15 {
+    background-color: rgb(0 0 0 / 0.05);
+}
+html[data-theme='light'] .genesis-scope .bg-white\/15 {
+    background-color: rgb(0 0 0 / 0.05);
+}
+html[data-theme='light'] .genesis-scope .hover\:bg-white\/10:hover {
+    background-color: rgb(0 0 0 / 0.05);
+}
+html[data-theme='light'] .genesis-scope .via-white {
+    --tw-gradient-to: rgb(0 0 0 / 0) var(--tw-gradient-to-position);
+    --tw-gradient-stops: var(--tw-gradient-from), rgb(0 0 0 / 0.3) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+html[data-theme='light'] .genesis-scope .hover\:text-gray-300:hover {
+    color: #374151;
+}
+html[data-theme='light'] .genesis-scope .from-transparent {
+    --tw-gradient-from: rgb(0 0 0 / 0) var(--tw-gradient-from-position);
+}
