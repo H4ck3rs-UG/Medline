@@ -66,15 +66,44 @@ def _language_menu():
     return line(dtmf.ALL_LANGUAGES,dtmf.LANGUAGE_MENU,dtmf.system_text(dtmf.LANGUAGE_MENU))
 def start(phone,sid=None):
     sid=sid or uuid.uuid4().hex[:12]
-    s={"sid":sid,"phone":phone,"lang":None,"symptoms":[],"flags":{},"answers":{},"invalid":0}
+    s={"sid":sid,"phone":phone,"lang":None,"symptoms":[],"flags":{},"answers":{},"invalid":0,
+       "bio_stage":None,"sex":"","age":0,"name":"","village":""}
     _sessions[sid]=s
     return s, [_language_menu()], "menu"
+BIO_SEX={"1":"M","2":"F"}
+BIO_AGE={"1":2,"2":10,"3":35,"4":70}  # band mid-point -> stored age
+def _bio_prompt(stage:str,lang:str):
+    txt={"sex":"Press 1 for male, 2 for female. Sex?","age":"Press 1 under-5, 2 child 5-17, 3 adult 18-59, 4 elder 60 plus. Age group?"}[stage]
+    return (lang,f"bio_{stage}",dtmf.system_text(f"bio_{stage}",lang) if f"bio_{stage}" in getattr(dtmf,"SYSTEM_TEXT",{}) else txt)
 def turn(s,text=None,digits=None):
     key=(digits or "")[:1]
     if not s.get("lang"):
         lang=LANG_KEYS.get(key)
         if not lang: return None,[_language_menu()],"menu"
-        s["lang"]=lang
+        s["lang"]=lang; s["bio_stage"]="sex"
+        return None,[_bio_prompt("sex",lang)],"menu"
+    # Bio stage first: sex -> age -> symptoms. Works for speech + DTMF langs alike.
+    if s.get("bio_stage")=="sex":
+        if key in BIO_SEX: s["sex"]=BIO_SEX[key]; s["bio_stage"]="age"; return None,[_bio_prompt("age",s["lang"])],"menu"
+        # speech path: try keyword, else re-ask once then default unknown
+        low=(text or "").lower()
+        if "female" in low or "woman" in low or "girl" in low: s["sex"]="F"
+        elif "male" in low or "man" in low or "boy" in low: s["sex"]="M"
+        else:
+            if not s.get("bio_retry"): s["bio_retry"]=True; return None,[_bio_prompt("sex",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
+            s["sex"]=""
+        s["bio_stage"]="age"; s.pop("bio_retry",None); return None,[_bio_prompt("age",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
+    if s.get("bio_stage")=="age":
+        if key in BIO_AGE: s["age"]=BIO_AGE[key]; s["bio_stage"]=None
+        else:
+            import re as _re
+            m=_re.search(r"\b(\d{1,3})\b",text or "")
+            if m: s["age"]=int(m.group(1)); s["bio_stage"]=None
+            else:
+                if not s.get("bio_retry2"): s["bio_retry2"]=True; return None,[_bio_prompt("age",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
+                s["age"]=0; s["bio_stage"]=None
+        s.pop("bio_retry2",None)
+        lang=s["lang"]
         if lang in SPEECH_LANGS: return None,[line(lang,"describe_symptoms")],"listen"
         return None,[line(lang,"welcome"),question(lang,dtmf.MENU[0])],"menu"
     lang=s["lang"]
