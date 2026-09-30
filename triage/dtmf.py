@@ -117,6 +117,12 @@ SYSTEM_PROMPTS: dict[str, dict[str, str]] = {
         "en": "For English, press 1. Kwa Kiswahili, bonyeza 2. For Luganda, press 3. "
         "For Runyankole, press 4.",
     },
+    # Asked by the phone backend before the symptom questions, for the ticket and
+    # the dashboard stats. Age uses the MENU "age_group" question, asked once.
+    "bio_sex": {
+        "en": "Is the patient male or female? Press 1 for male, 2 for female.",
+        "sw": "Mgonjwa ni wa jinsia gani? Bonyeza 1 kwa mwanaume, 2 kwa mwanamke.",
+    },
     "welcome": {
         "en": "Welcome to the community health line. Please answer each question with your keypad.",
         "sw": "Karibu kwenye simu ya afya ya jamii. Tafadhali jibu kila swali kwa kubonyeza namba.",

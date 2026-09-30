@@ -22,6 +22,7 @@ class Ticket(Base):
     status=Column(String,default="open")
     name=Column(String,default="")
     age=Column(Integer,default=0)
+    age_group=Column(String,default="")  # infant / child / adult / elderly, as the rules engine uses
     sex=Column(String,default="")
     village=Column(String,default="")
     diagnosis=Column(Text,default="")
@@ -37,6 +38,7 @@ try:
         _have={r[1] for r in _c.exec_driver_sql("PRAGMA table_info(tickets)").all()}
         if "name" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN name VARCHAR DEFAULT ''")
         if "age" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN age INTEGER DEFAULT 0")
+        if "age_group" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN age_group VARCHAR DEFAULT ''")
         if "sex" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN sex VARCHAR DEFAULT ''")
         if "village" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN village VARCHAR DEFAULT ''")
         if "diagnosis" not in _have: _c.exec_driver_sql("ALTER TABLE tickets ADD COLUMN diagnosis TEXT DEFAULT ''")
@@ -48,7 +50,7 @@ app = FastAPI(title="Voice Triage Intake")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"])
 class IntakeIn(BaseModel):
     caller: str=""; lang: str="en"; symptoms: list[str]=[]; flags: dict={}
-    name: str=""; age: int=0; sex: str=""; village: str=""
+    name: str=""; age: int=0; age_group: str=""; sex: str=""; village: str=""
     transcript: str=""; summary: str=""
 class StatusIn(BaseModel):
     status: str
@@ -56,17 +58,15 @@ class StatusIn(BaseModel):
     diagnosed_by: str=""
 def _row(r) -> dict:
     return {"id":r.id,"caller":r.caller,"lang":r.lang,"symptoms":r.symptoms,"tier":r.tier,"reason":r.reason,"confidence":r.confidence,"status":r.status,
-        "name":getattr(r,"name","") or "","age":getattr(r,"age",0) or 0,"sex":getattr(r,"sex","") or "","village":getattr(r,"village","") or "",
+        "name":getattr(r,"name","") or "","age":getattr(r,"age",0) or 0,"age_group":getattr(r,"age_group","") or "","sex":getattr(r,"sex","") or "","village":getattr(r,"village","") or "",
         "diagnosis":getattr(r,"diagnosis","") or "","diagnosed_by":getattr(r,"diagnosed_by","") or "",
         "transcript":getattr(r,"transcript","") or "","summary":getattr(r,"summary","") or ""}
-def _band(age:int) -> str:
-    try: a=int(age)
+def _band(d:dict) -> str:
+    """Age group for stats: the keypad answer when given, else from the age in years."""
+    if d.get("age_group"): return d["age_group"]
+    try: a=int(d.get("age") or 0)
     except Exception: return "unknown"
-    if a<=0: return "unknown"
-    if a<5: return "0-4"
-    if a<18: return "5-17"
-    if a<60: return "18-59"
-    return "60+"
+    return V.age_group_of(a) if a>0 else "unknown"
 def _summarize(tier: str, symptoms: list[str], bio: dict, transcript: str) -> str:
     """AI summary when LLM configured, else rules-based one-liner. Never decides tier."""
     from .config import LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT
@@ -74,10 +74,11 @@ def _summarize(tier: str, symptoms: list[str], bio: dict, transcript: str) -> st
     if bio.get("name"): who.append(str(bio["name"]))
     if bio.get("sex"): who.append(str(bio["sex"]))
     if bio.get("age"): who.append(f"{bio['age']}y")
+    elif bio.get("age_group"): who.append(str(bio["age_group"]))
     if bio.get("lang"): who.append(str(bio["lang"]))
     who_s=" ".join(who) or "unknown caller"
     sym=", ".join(symptoms) or "no symptoms captured"
-    fallback=f"{tier.upper}: {who_s} — {sym_s}." if (sym_s:=sym) else f"{tier.upper}: {who_s}."
+    fallback=f"{tier.upper()}: {who_s} — {sym}."
     if transcript:
         fallback+=f" Call notes: {transcript[:300]}"
     if LLM_BASE_URL and LLM_MODEL:
@@ -88,16 +89,16 @@ def _summarize(tier: str, symptoms: list[str], bio: dict, transcript: str) -> st
                 timeout=LLM_TIMEOUT, json={"model":LLM_MODEL,"temperature":0,"max_tokens":120,
                 "messages":[{"role":"system","content":"Summarise this triage call in 2 sentences for a clinician. Symptoms, bio, urgency. No diagnosis."},
                 {"role":"user","content":f"tier={tier} symptoms={sym} bio={who_s} transcript={transcript[:1500]}"}]})
-            import json as _j
-            return _j.loads(r.json()["choices"][0]["message"]["content"]).get("summary") or r.json()["choices"][0]["message"]["content"][:500]
+            content=(r.json()["choices"][0]["message"]["content"] or "").strip()
+            if content: return content[:500]
         except Exception as e: print("summary llm fail, rules fallback:",e)
     return fallback
 @app.post("/api/intake")
 def intake(b: IntakeIn):
     tier,reason,conf=triage(b.symptoms,b.flags)
-    summary=b.summary or _summarize(tier,b.symptoms,{"age":b.age,"sex":b.sex,"lang":b.lang,"name":b.name},b.transcript)
+    summary=b.summary or _summarize(tier,b.symptoms,{"age":b.age,"age_group":b.age_group,"sex":b.sex,"lang":b.lang,"name":b.name},b.transcript)
     db=Session(); t=Ticket(caller=b.caller,lang=b.lang,symptoms=",".join(b.symptoms),tier=tier,reason=reason,confidence=conf,
-        name=b.name,age=b.age,sex=b.sex,village=b.village,transcript=b.transcript,summary=summary)
+        name=b.name,age=b.age,age_group=b.age_group,sex=b.sex,village=b.village,transcript=b.transcript,summary=summary)
     db.add(t); db.commit(); db.refresh(t); db.close()
     action={"emergency":"nearest facility + alert","urgent":"CHW callback ticket","self_care":"TTS self-care advice"}[tier]
     return {"id":t.id,"tier":tier,"reason":reason,"confidence":conf,"action":action}
@@ -113,7 +114,7 @@ def stats():
     by_tier: dict={}; by_sex: dict={}; by_band: dict={}; by_lang: dict={}; by_village: dict={}
     for r in rows:
         d=_row(r)
-        for tbl,key in [(by_tier,d["tier"]),(by_sex,d["sex"] or "unknown"),(by_band,_band(d["age"])),(by_lang,d["lang"]),(by_village,d["village"] or "unknown")]:
+        for tbl,key in [(by_tier,d["tier"]),(by_sex,d["sex"] or "unknown"),(by_band,_band(d)),(by_lang,d["lang"]),(by_village,d["village"] or "unknown")]:
             tbl[key]=tbl.get(key,0)+1
     return {"total":len(rows),"open":sum(1 for r in rows if r.status=="open"),
         "by_tier":by_tier,"by_sex":by_sex,"by_age_band":by_band,"by_lang":by_lang,"by_village":by_village}
@@ -158,9 +159,9 @@ def voice_cb(sessionId: str=Form(""), callerNumber: str=Form(""), dtmfDigits: st
         else:
             tier,reason,conf=triage(s["symptoms"],s["flags"]); symptoms=s["symptoms"]
         transcript="\n".join(log)
-        summary=_summarize(tier,symptoms,{"age":s.get("age",0),"sex":s.get("sex",""),"lang":s.get("lang",""),"name":s.get("name","")},transcript)
+        summary=_summarize(tier,symptoms,{"age":s.get("age",0),"age_group":s.get("age_group",""),"sex":s.get("sex",""),"lang":s.get("lang",""),"name":s.get("name","")},transcript)
         db=Session(); t=Ticket(caller=s["phone"],lang=s["lang"],symptoms=",".join(symptoms),tier=tier,reason=reason,confidence=conf,
-            name=s.get("name",""),age=s.get("age",0),sex=s.get("sex",""),village=s.get("village",""),
+            name=s.get("name",""),age=s.get("age",0),age_group=s.get("age_group",""),sex=s.get("sex",""),village=s.get("village",""),
             transcript=transcript,summary=summary)
         db.add(t); db.commit(); db.close()
         return Response(content=V.render([V.closing(s["lang"],tier)],"hangup"),media_type="application/xml")

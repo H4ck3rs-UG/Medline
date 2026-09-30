@@ -67,14 +67,23 @@ def _language_menu():
 def start(phone,sid=None):
     sid=sid or uuid.uuid4().hex[:12]
     s={"sid":sid,"phone":phone,"lang":None,"symptoms":[],"flags":{},"answers":{},"invalid":0,
-       "bio_stage":None,"sex":"","age":0,"name":"","village":""}
+       "bio_stage":None,"sex":"","age":0,"age_group":"","name":"","village":""}
     _sessions[sid]=s
     return s, [_language_menu()], "menu"
 BIO_SEX={"1":"M","2":"F"}
-BIO_AGE={"1":2,"2":10,"3":35,"4":70}  # band mid-point -> stored age
+# Spoken answers (English + Swahili, needs native-speaker review). Female is checked first.
+SEX_WORDS=[("F",r"\b(female|woman|girl|mwanamke|mke|msichana)\b"),("M",r"\b(male|man|boy|mwanaume|mume|mvulana)\b")]
+# Age is asked once, with the keypad menu's own age_group question, so the rules
+# engine and the dashboard share one set of age groups.
+AGE_QUESTION=next(q for q in dtmf.MENU if q.id=="age_group")
+def age_group_of(age:int)->str:
+    """Map a spoken age in years onto the triage age groups."""
+    if age<1: return "infant"
+    if age<=12: return "child"
+    if age<65: return "adult"
+    return "elderly"
 def _bio_prompt(stage:str,lang:str):
-    txt={"sex":"Press 1 for male, 2 for female. Sex?","age":"Press 1 under-5, 2 child 5-17, 3 adult 18-59, 4 elder 60 plus. Age group?"}[stage]
-    return (lang,f"bio_{stage}",dtmf.system_text(f"bio_{stage}",lang) if f"bio_{stage}" in getattr(dtmf,"SYSTEM_TEXT",{}) else txt)
+    return line(lang,"bio_sex") if stage=="sex" else question(lang,AGE_QUESTION)
 def turn(s,text=None,digits=None):
     key=(digits or "")[:1]
     if not s.get("lang"):
@@ -82,32 +91,28 @@ def turn(s,text=None,digits=None):
         if not lang: return None,[_language_menu()],"menu"
         s["lang"]=lang; s["bio_stage"]="sex"
         return None,[_bio_prompt("sex",lang)],"menu"
-    # Bio stage first: sex -> age -> symptoms. Works for speech + DTMF langs alike.
+    if digits==NURSE_KEY: return None,[line(s["lang"],"connecting_nurse")],"transfer"  # at any point after language
+    # Bio stage first: sex -> age -> symptoms. Keypad answers for every language;
+    # spoken answers are understood when a transcript is available.
     if s.get("bio_stage")=="sex":
-        if key in BIO_SEX: s["sex"]=BIO_SEX[key]; s["bio_stage"]="age"; return None,[_bio_prompt("age",s["lang"])],"menu"
-        # speech path: try keyword, else re-ask once then default unknown
         low=(text or "").lower()
-        if "female" in low or "woman" in low or "girl" in low: s["sex"]="F"
-        elif "male" in low or "man" in low or "boy" in low: s["sex"]="M"
-        else:
-            if not s.get("bio_retry"): s["bio_retry"]=True; return None,[_bio_prompt("sex",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
-            s["sex"]=""
-        s["bio_stage"]="age"; s.pop("bio_retry",None); return None,[_bio_prompt("age",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
+        spoken=next((sex for sex,pattern in SEX_WORDS if re.search(pattern,low)),None)
+        if key in BIO_SEX or spoken: s["sex"]=BIO_SEX.get(key) or spoken
+        elif not s.get("bio_retry"): s["bio_retry"]=True; return None,[line(s["lang"],"invalid_key"),_bio_prompt("sex",s["lang"])],"menu"
+        else: s["sex"]=""
+        s["bio_stage"]="age"; s.pop("bio_retry",None); return None,[_bio_prompt("age",s["lang"])],"menu"
     if s.get("bio_stage")=="age":
-        if key in BIO_AGE: s["age"]=BIO_AGE[key]; s["bio_stage"]=None
-        else:
-            import re as _re
-            m=_re.search(r"\b(\d{1,3})\b",text or "")
-            if m: s["age"]=int(m.group(1)); s["bio_stage"]=None
-            else:
-                if not s.get("bio_retry2"): s["bio_retry2"]=True; return None,[_bio_prompt("age",s["lang"])],"menu" if s["lang"] not in SPEECH_LANGS else "listen"
-                s["age"]=0; s["bio_stage"]=None
-        s.pop("bio_retry2",None)
+        m=re.search(r"\b(\d{1,3})\b",text or "")
+        if key in AGE_QUESTION.options:
+            s["age_group"]=AGE_QUESTION.options[key].value
+            s["answers"]["age_group"]=key  # the keypad menu will not ask again
+        elif m: s["age"]=int(m.group(1)); s["age_group"]=age_group_of(s["age"])
+        elif not s.get("bio_retry2"): s["bio_retry2"]=True; return None,[line(s["lang"],"invalid_key"),_bio_prompt("age",s["lang"])],"menu"
+        s["bio_stage"]=None; s.pop("bio_retry2",None)
         lang=s["lang"]
         if lang in SPEECH_LANGS: return None,[line(lang,"describe_symptoms")],"listen"
-        return None,[line(lang,"welcome"),question(lang,dtmf.MENU[0])],"menu"
+        return None,[line(lang,"welcome"),question(lang,dtmf.next_question(s["answers"]))],"menu"
     lang=s["lang"]
-    if digits==NURSE_KEY: return None,[line(lang,"connecting_nurse")],"transfer"
     if lang in SPEECH_LANGS:
         d=extract_symptoms(text or ""); s["symptoms"]+=d.get("symptoms",[]); s["flags"]={**s["flags"],**{k:v for k,v in d.items() if k!="symptoms"}}
         return text,None,"triage"
