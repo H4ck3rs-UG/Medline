@@ -51,7 +51,19 @@ import {
 } from 'recharts';
 import {useMediaQuery} from '@astryxdesign/core/hooks';
 import {BellAlertIcon, ChartBarIcon, Cog6ToothIcon, InboxIcon} from '@heroicons/react/24/outline';
-import {STRINGS, UI_LANGS, type UiLang} from './i18n';
+import {
+  STRINGS,
+  UI_LANGS,
+  ageGroupLabel,
+  callLangLabel,
+  fmt,
+  sexLabel,
+  statusLabel,
+  symptomsLabel,
+  tierLabel,
+  unknownLabel,
+  type UiLang,
+} from './i18n';
 
 const API = process.env.NEXT_PUBLIC_API || 'http://localhost:8000';
 const LANG_KEY = 'dashboard-lang';
@@ -77,6 +89,7 @@ interface Ticket extends Record<string, unknown> {
   status: string;
   name: string;
   age: number;
+  age_group: string;
   sex: string;
   village: string;
   diagnosis: string;
@@ -97,23 +110,19 @@ interface Stats {
 
 const TIER_DOT = {emergency: 'error', urgent: 'warning', self_care: 'success'} as const;
 const TIER_ORDER = ['emergency', 'urgent', 'self_care'] as const;
-const TIER_LABEL: Record<string, string> = {
-  emergency: 'Emergency',
-  urgent: 'Urgent',
-  self_care: 'Self-care',
-};
 
 function TicketRows({
   tickets,
   selectedId,
   onSelect,
-  emptyLabel,
+  lang,
 }: {
   tickets: Ticket[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  emptyLabel: string;
+  lang: UiLang;
 }) {
+  const s = STRINGS[lang];
   const groups = TIER_ORDER.map(tier => ({
     tier,
     items: tickets.filter(t => t.tier === tier),
@@ -122,7 +131,7 @@ function TicketRows({
   if (groups.length === 0) {
     return (
       <EmptyState
-        title={emptyLabel}
+        title={s.empty}
         description=""
         icon={<Icon icon={BellAlertIcon} size="lg" />}
       />
@@ -134,9 +143,9 @@ function TicketRows({
       {groups.map(group => (
         <VStack gap={0} key={group.tier}>
           <HStack gap={2} vAlign="center" style={styles.groupHeader}>
-            <StatusDot variant={TIER_DOT[group.tier]} label={TIER_LABEL[group.tier]} />
+            <StatusDot variant={TIER_DOT[group.tier]} label={tierLabel(group.tier, lang)} />
             <Text type="label" color="secondary">
-              {TIER_LABEL[group.tier]}
+              {tierLabel(group.tier, lang)}
             </Text>
             <Text type="supporting" color="secondary">
               {group.items.length}
@@ -146,12 +155,12 @@ function TicketRows({
             {group.items.map(t => (
               <ListItem
                 key={t.id}
-                label={`#${t.id} · ${t.caller || 'unknown'}`}
-                description={`${t.symptoms} · ${t.reason}`}
+                label={`#${t.id} · ${t.caller || s.unknownCaller}`}
+                description={`${symptomsLabel(t.symptoms, lang) || s.noSymptoms} · ${t.reason}`}
                 startContent={
                   <StatusDot
                     variant={TIER_DOT[t.tier]}
-                    label={t.tier}
+                    label={tierLabel(t.tier, lang)}
                     isPulsing={t.tier === 'emergency' && t.status === 'open'}
                   />
                 }
@@ -159,7 +168,7 @@ function TicketRows({
                   <Token
                     size="sm"
                     color={t.status === 'open' ? 'blue' : 'gray'}
-                    label={t.status}
+                    label={statusLabel(t.status, lang)}
                   />
                 }
                 onClick={() => onSelect(t.id)}
@@ -175,15 +184,16 @@ function TicketRows({
 
 function TicketInspector({
   ticket,
-  closeLabel,
+  lang,
   onClose,
   onDiagnose,
 }: {
   ticket: Ticket;
-  closeLabel: string;
+  lang: UiLang;
   onClose: (id: number) => void;
   onDiagnose: (id: number, diagnosis: string, by: string, andClose?: boolean) => void;
 }) {
+  const s = STRINGS[lang];
   const [diagnosis, setDiagnosis] = useState(ticket.diagnosis || '');
   const [by, setBy] = useState(ticket.diagnosed_by || '');
   useEffect(() => {
@@ -194,36 +204,36 @@ function TicketInspector({
     <VStack gap={4} style={styles.inspector}>
       <VStack gap={2}>
         <HStack gap={2} vAlign="center">
-          <StatusDot variant={TIER_DOT[ticket.tier]} label={ticket.tier} />
+          <StatusDot variant={TIER_DOT[ticket.tier]} label={tierLabel(ticket.tier, lang)} />
           <Text type="supporting" color="secondary">
             #{ticket.id}
           </Text>
           <Token
             size="sm"
             color={ticket.status === 'open' ? 'blue' : 'gray'}
-            label={ticket.status}
+            label={statusLabel(ticket.status, lang)}
           />
         </HStack>
-        <Heading level={2}>{TIER_LABEL[ticket.tier]}</Heading>
+        <Heading level={2}>{tierLabel(ticket.tier, lang)}</Heading>
       </VStack>
 
       <Divider />
 
       <VStack gap={2}>
-        <Heading level={3}>Call summary</Heading>
+        <Heading level={3}>{s.callSummary}</Heading>
         <Text type="body">
           {ticket.summary ||
-            `${TIER_LABEL[ticket.tier]}: ${ticket.symptoms || 'no symptoms captured'}.`}
+            `${tierLabel(ticket.tier, lang)}: ${symptomsLabel(ticket.symptoms, lang) || s.noSymptoms}.`}
         </Text>
         {ticket.transcript ? (
-          <Collapsible trigger="View full transcript" defaultIsOpen={false}>
+          <Collapsible trigger={s.viewTranscript} defaultIsOpen={false}>
             <Text type="body" color="secondary">
               {ticket.transcript}
             </Text>
           </Collapsible>
         ) : (
           <Text type="supporting" color="secondary">
-            No transcript captured for this ticket.
+            {s.noTranscript}
           </Text>
         )}
       </VStack>
@@ -231,13 +241,13 @@ function TicketInspector({
       <Divider />
 
       <VStack gap={2}>
-        <Heading level={3}>Doctor diagnosis</Heading>
+        <Heading level={3}>{s.doctorDiagnosis}</Heading>
         {ticket.diagnosis ? (
           <VStack gap={1}>
             <Text type="body">{ticket.diagnosis}</Text>
             {ticket.diagnosed_by && (
               <Text type="supporting" color="secondary">
-                by {ticket.diagnosed_by}
+                {fmt(s.diagnosedBy, {name: ticket.diagnosed_by})}
               </Text>
             )}
           </VStack>
@@ -245,26 +255,26 @@ function TicketInspector({
         {ticket.status === 'open' && (
           <VStack gap={2}>
             <TextArea
-              label="Diagnosis"
-              placeholder="Clinical findings, prescription, referral…"
+              label={s.diagnosis}
+              placeholder={s.diagnosisPlaceholder}
               value={diagnosis}
               onChange={setDiagnosis}
             />
             <TextInput
-              label="Doctor name"
+              label={s.doctorName}
               placeholder="Dr. …"
               value={by}
               onChange={setBy}
             />
             <HStack gap={2}>
               <Button
-                label="Save diagnosis"
+                label={s.saveDiagnosis}
                 variant="secondary"
                 size="sm"
                 onClick={() => onDiagnose(ticket.id, diagnosis, by)}
               />
               <Button
-                label={`${closeLabel} with diagnosis`}
+                label={s.closeWithDiagnosis}
                 size="sm"
                 onClick={() => onDiagnose(ticket.id, diagnosis, by, true)}
               />
@@ -275,41 +285,52 @@ function TicketInspector({
 
       {ticket.status === 'open' && (
         <HStack gap={2}>
-          <Button label={closeLabel} variant="secondary" size="sm" onClick={() => onClose(ticket.id)} />
+          <Button label={s.close} variant="secondary" size="sm" onClick={() => onClose(ticket.id)} />
         </HStack>
       )}
 
       <Divider />
 
       <VStack gap={2}>
-        <Heading level={3}>Health profile</Heading>
+        <Heading level={3}>{s.healthProfile}</Heading>
       </VStack>
       <MetadataList columns="single" label={{position: 'start', width: 96}}>
-        <MetadataListItem label="Name">
+        <MetadataListItem label={s.name}>
           <Text type="body">{ticket.name || '—'}</Text>
         </MetadataListItem>
-        <MetadataListItem label="Age">
-          <Text type="body">{ticket.age > 0 ? ticket.age : '—'}</Text>
+        <MetadataListItem label={s.age}>
+          <Text type="body">
+            {ticket.age > 0
+              ? ticket.age
+              : ticket.age_group
+                ? ageGroupLabel(ticket.age_group, lang)
+                : '—'}
+          </Text>
         </MetadataListItem>
-        <MetadataListItem label="Sex">
-          <Text type="body">{ticket.sex || '—'}</Text>
+        <MetadataListItem label={s.sex}>
+          <Text type="body">{ticket.sex ? sexLabel(ticket.sex, lang) : '—'}</Text>
         </MetadataListItem>
-        <MetadataListItem label="Village">
+        <MetadataListItem label={s.village}>
           <Text type="body">{ticket.village || '—'}</Text>
         </MetadataListItem>
-        <MetadataListItem label="Caller">
+        <MetadataListItem label={s.caller}>
           <Text type="body">{ticket.caller || '—'}</Text>
         </MetadataListItem>
-        <MetadataListItem label="Language">
-          <Text type="body">{ticket.lang}</Text>
+        <MetadataListItem label={s.language}>
+          <Text type="body">{callLangLabel(ticket.lang, lang)}</Text>
         </MetadataListItem>
-        <MetadataListItem label="Symptoms">
-          <Text type="body">{ticket.symptoms || '—'}</Text>
+        <MetadataListItem label={s.symptoms}>
+          <Text type="body">{symptomsLabel(ticket.symptoms, lang) || '—'}</Text>
         </MetadataListItem>
-        <MetadataListItem label="Reason">
+        <MetadataListItem label={s.reason}>
           <Text type="body">{ticket.reason}</Text>
+          {lang !== 'en' && (
+            <Text type="supporting" color="secondary">
+              {s.ruleNote}
+            </Text>
+          )}
         </MetadataListItem>
-        <MetadataListItem label="Confidence">
+        <MetadataListItem label={s.confidence}>
           <Text type="body">{ticket.confidence > 0 ? `${ticket.confidence}%` : '—'}</Text>
         </MetadataListItem>
       </MetadataList>
@@ -317,7 +338,8 @@ function TicketInspector({
   );
 }
 
-function StatsSidebar({stats}: {stats: Stats | null}) {
+function StatsSidebar({stats, lang}: {stats: Stats | null; lang: UiLang}) {
+  const s = STRINGS[lang];
   const total = stats?.total ?? 0;
   const bar = (
     label: string,
@@ -346,7 +368,8 @@ function StatsSidebar({stats}: {stats: Stats | null}) {
   const TIER_VARIANT = {emergency: 'error', urgent: 'warning', self_care: 'success'} as const;
   const section = (
     title: string,
-    obj?: Record<string, number>,
+    obj: Record<string, number> | undefined,
+    labelOf: (k: string) => string,
     variantOf?: (k: string) => 'error' | 'warning' | 'success' | 'accent' | 'neutral',
   ) => (
     <VStack gap={2} key={title}>
@@ -356,7 +379,7 @@ function StatsSidebar({stats}: {stats: Stats | null}) {
       {obj && Object.keys(obj).length > 0 ? (
         Object.entries(obj)
           .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => bar(k, v, variantOf?.(k) ?? 'accent'))
+          .map(([k, v]) => bar(labelOf(k), v, variantOf?.(k) ?? 'accent'))
       ) : (
         <Text type="supporting" color="secondary">
           —
@@ -367,21 +390,26 @@ function StatsSidebar({stats}: {stats: Stats | null}) {
   return (
     <VStack gap={4} style={styles.inspector}>
       <VStack gap={1}>
-        <Heading level={3}>Overview</Heading>
+        <Heading level={3}>{s.overview}</Heading>
         <Text type="supporting" color="secondary">
-          {stats ? `${stats.open} open / ${stats.total} total` : 'Loading…'}
+          {stats ? fmt(s.openOfTotal, {open: stats.open, total: stats.total}) : s.loading}
         </Text>
       </VStack>
       <Divider />
-      {section('By tier', stats?.by_tier, k => TIER_VARIANT[k as keyof typeof TIER_VARIANT] ?? 'accent')}
+      {section(
+        s.byTier,
+        stats?.by_tier,
+        k => tierLabel(k, lang),
+        k => TIER_VARIANT[k as keyof typeof TIER_VARIANT] ?? 'accent',
+      )}
       <Divider />
-      {section('By sex', stats?.by_sex)}
+      {section(s.bySex, stats?.by_sex, k => sexLabel(k, lang))}
       <Divider />
-      {section('By age', stats?.by_age_band)}
+      {section(s.byAge, stats?.by_age_band, k => ageGroupLabel(k, lang))}
       <Divider />
-      {section('By language', stats?.by_lang)}
+      {section(s.byLanguage, stats?.by_lang, k => callLangLabel(k, lang))}
       <Divider />
-      {section('By village', stats?.by_village, () => 'neutral')}
+      {section(s.byVillage, stats?.by_village, k => unknownLabel(k, lang), () => 'neutral')}
     </VStack>
   );
 }
@@ -394,13 +422,12 @@ const CHART_FILL: Record<string, string> = {
   F: 'var(--color-text-purple)',
 };
 
-function KpiRow({stats}: {stats: Stats | null}) {
+function KpiRow({stats, lang}: {stats: Stats | null; lang: UiLang}) {
+  const s = STRINGS[lang];
   const kpis = [
-    {label: 'Total tickets', value: stats?.total ?? 0},
-    {label: 'Open', value: stats?.open ?? 0},
-    {label: 'Emergency', value: stats?.by_tier?.emergency ?? 0},
-    {label: 'Urgent', value: stats?.by_tier?.urgent ?? 0},
-    {label: 'Self-care', value: stats?.by_tier?.self_care ?? 0},
+    {label: s.totalTickets, value: stats?.total ?? 0},
+    {label: s.openTickets, value: stats?.open ?? 0},
+    ...TIER_ORDER.map(tier => ({label: tierLabel(tier, lang), value: stats?.by_tier?.[tier] ?? 0})),
   ];
   return (
     <HStack gap={3}>
@@ -420,15 +447,16 @@ function KpiRow({stats}: {stats: Stats | null}) {
   );
 }
 
-function TierChart({stats}: {stats: Stats | null}) {
-  const data = ['emergency', 'urgent', 'self_care'].map(tier => ({
-    name: tier,
+function TierChart({stats, lang}: {stats: Stats | null; lang: UiLang}) {
+  const data = TIER_ORDER.map(tier => ({
+    key: tier,
+    name: tierLabel(tier, lang),
     count: stats?.by_tier?.[tier] ?? 0,
   }));
   return (
     <Card>
       <VStack gap={3}>
-        <Heading level={3}>Tickets by urgency tier</Heading>
+        <Heading level={3}>{STRINGS[lang].tierChart}</Heading>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data}>
             <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
@@ -448,7 +476,7 @@ function TierChart({stats}: {stats: Stats | null}) {
             />
             <Bar dataKey="count" radius={[4, 4, 0, 0]}>
               {data.map(d => (
-                <Cell key={d.name} fill={CHART_FILL[d.name]} />
+                <Cell key={d.key} fill={CHART_FILL[d.key]} />
               ))}
             </Bar>
           </BarChart>
@@ -458,14 +486,14 @@ function TierChart({stats}: {stats: Stats | null}) {
   );
 }
 
-function AgeChart({stats}: {stats: Stats | null}) {
+function AgeChart({stats, lang}: {stats: Stats | null; lang: UiLang}) {
   const data = Object.entries(stats?.by_age_band ?? {})
     .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({name, count}));
+    .map(([key, count]) => ({name: ageGroupLabel(key, lang), count}));
   return (
     <Card>
       <VStack gap={3}>
-        <Heading level={3}>Tickets by age band</Heading>
+        <Heading level={3}>{STRINGS[lang].ageChart}</Heading>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data}>
             <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
@@ -491,20 +519,21 @@ function AgeChart({stats}: {stats: Stats | null}) {
   );
 }
 
-function SexChart({stats}: {stats: Stats | null}) {
-  const data = Object.entries(stats?.by_sex ?? {}).map(([name, value]) => ({
-    name,
+function SexChart({stats, lang}: {stats: Stats | null; lang: UiLang}) {
+  const data = Object.entries(stats?.by_sex ?? {}).map(([key, value]) => ({
+    key,
+    name: sexLabel(key, lang),
     value,
   }));
   return (
     <Card>
       <VStack gap={3}>
-        <Heading level={3}>Tickets by sex</Heading>
+        <Heading level={3}>{STRINGS[lang].sexChart}</Heading>
         <ResponsiveContainer width="100%" height={220}>
           <PieChart>
             <Pie data={data} dataKey="value" nameKey="name" innerRadius={48} outerRadius={80}>
               {data.map(d => (
-                <Cell key={d.name} fill={CHART_FILL[d.name] ?? 'var(--color-neutral)'} />
+                <Cell key={d.key} fill={CHART_FILL[d.key] ?? 'var(--color-neutral)'} />
               ))}
             </Pie>
             <Tooltip
@@ -538,6 +567,9 @@ export default function Page() {
       if (v === 'en' || v === 'sw') setLang(v);
     } catch {}
   }, []);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   const load = () =>
     fetch(`${API}/api/tickets`)
@@ -594,14 +626,27 @@ export default function Page() {
   const selected = visible.find(t => t.id === selectedId) ?? null;
   const openCount = tickets.filter(t => t.status === 'open').length;
   const s = STRINGS[lang];
+  const pickLang = (v: string) => {
+    setLang(v as UiLang);
+    try {
+      localStorage.setItem(LANG_KEY, v);
+    } catch {}
+  };
+  const langSwitch = (
+    <SegmentedControl label={s.language} value={lang} onChange={pickLang} size="sm">
+      {(Object.keys(UI_LANGS) as UiLang[]).map(l => (
+        <SegmentedControlItem key={l} label={UI_LANGS[l]} value={l} />
+      ))}
+    </SegmentedControl>
+  );
 
   const queue = (
     <Layout
       height="fill"
       start={
         isNarrow || sideCollapsed ? undefined : (
-          <LayoutPanel width={280} padding={0} label="Population stats" hasDivider>
-            <StatsSidebar stats={stats} />
+          <LayoutPanel width={280} padding={0} label={s.populationStats} hasDivider>
+            <StatsSidebar stats={stats} lang={lang} />
           </LayoutPanel>
         )
       }
@@ -610,7 +655,7 @@ export default function Page() {
           <HStack gap={3} vAlign="center">
             {!isNarrow && (
               <Button
-                label={sideCollapsed ? 'Show stats' : 'Hide stats'}
+                label={sideCollapsed ? s.showStats : s.hideStats}
                 variant="secondary"
                 size="sm"
                 onClick={() => setSideCollapsed(v => !v)}
@@ -620,34 +665,21 @@ export default function Page() {
               <HStack gap={2} vAlign="center">
                 <Heading level={1}>{s.title}</Heading>
                 <Text type="supporting" color="secondary">
-                  {openCount} open
+                  {fmt(s.openCount, {n: openCount})}
                 </Text>
               </HStack>
             </StackItem>
             <SegmentedControl
-              label="Filter by tier"
+              label={s.filterByTier}
               value={tierFilter}
               onChange={setTierFilter}
               size="sm">
-              <SegmentedControlItem label="All" value="all" />
-              <SegmentedControlItem label="Emergency" value="emergency" />
-              <SegmentedControlItem label="Urgent" value="urgent" />
-              <SegmentedControlItem label="Self-care" value="self_care" />
-            </SegmentedControl>
-            <SegmentedControl
-              label={s.language}
-              value={lang}
-              onChange={v => {
-                setLang(v as UiLang);
-                try {
-                  localStorage.setItem(LANG_KEY, v);
-                } catch {}
-              }}
-              size="sm">
-              {(Object.keys(UI_LANGS) as UiLang[]).map(l => (
-                <SegmentedControlItem key={l} label={UI_LANGS[l]} value={l} />
+              <SegmentedControlItem label={s.all} value="all" />
+              {TIER_ORDER.map(tier => (
+                <SegmentedControlItem key={tier} label={tierLabel(tier, lang)} value={tier} />
               ))}
             </SegmentedControl>
+            {langSwitch}
           </HStack>
         </LayoutHeader>
       }
@@ -659,7 +691,7 @@ export default function Page() {
                 tickets={visible}
                 selectedId={selected?.id ?? null}
                 onSelect={setSelectedId}
-                emptyLabel={s.empty}
+                lang={lang}
               />
             </StackItem>
           </VStack>
@@ -673,15 +705,15 @@ export default function Page() {
               hasDivider
               isAlwaysVisible={false}
               resizable={inspectorPanel.props}
-              label="Resize inspector"
+              label={s.resizeInspector}
             />
-            <LayoutPanel width={inspectorPanel.size} padding={0} label="Ticket details">
+            <LayoutPanel width={inspectorPanel.size} padding={0} label={s.ticketDetails}>
               {selected ? (
-                <TicketInspector ticket={selected} closeLabel={s.close} onClose={close} onDiagnose={diagnose} />
+                <TicketInspector ticket={selected} lang={lang} onClose={close} onDiagnose={diagnose} />
               ) : (
                 <EmptyState
-                  title="No ticket selected"
-                  description="Select a ticket to see details."
+                  title={s.noTicketSelected}
+                  description={s.selectTicket}
                   icon={<Icon icon={BellAlertIcon} size="lg" />}
                   isCompact
                 />
@@ -701,15 +733,15 @@ export default function Page() {
         <SideNav
           aria-label="Primary"
           collapsible={isNarrow ? false : true}
-          header={<SideNavHeading heading="Med-Intake" subheading="Triage console" />}
+          header={<SideNavHeading heading="Med-Intake" subheading={s.triageConsole} />}
           footer={
             <Text type="supporting" color="secondary">
-              {openCount} open
+              {fmt(s.openCount, {n: openCount})}
             </Text>
           }>
-          <SideNavSection title="Overview">
+          <SideNavSection title={s.navOverview}>
             <SideNavItem
-              label="Dashboard"
+              label={s.navDashboard}
               icon={<Icon icon={ChartBarIcon} size="sm" />}
               isSelected={view === 'dashboard'}
               onClick={() => setView('dashboard')}
@@ -718,9 +750,9 @@ export default function Page() {
               }
             />
           </SideNavSection>
-          <SideNavSection title="Operations">
+          <SideNavSection title={s.navOperations}>
             <SideNavItem
-              label="Triage queue"
+              label={s.navQueue}
               icon={<Icon icon={InboxIcon} size="sm" />}
               isSelected={view === 'queue'}
               onClick={() => setView('queue')}
@@ -729,9 +761,9 @@ export default function Page() {
               }
             />
           </SideNavSection>
-          <SideNavSection title="Settings">
+          <SideNavSection title={s.navSettings}>
             <SideNavItem
-              label="Display"
+              label={s.navDisplay}
               icon={<Icon icon={Cog6ToothIcon} size="sm" />}
               isSelected={view === 'settings'}
               onClick={() => setView('settings')}
@@ -744,36 +776,23 @@ export default function Page() {
           <VStack gap={4}>
             <HStack gap={2} vAlign="center">
               <StackItem size="fill">
-                <Heading level={1}>Operations dashboard</Heading>
+                <Heading level={1}>{s.opsDashboard}</Heading>
               </StackItem>
-              <SegmentedControl
-                label={s.language}
-                value={lang}
-                onChange={v => {
-                  setLang(v as UiLang);
-                  try {
-                    localStorage.setItem(LANG_KEY, v);
-                  } catch {}
-                }}
-                size="sm">
-                {(Object.keys(UI_LANGS) as UiLang[]).map(l => (
-                  <SegmentedControlItem key={l} label={UI_LANGS[l]} value={l} />
-                ))}
-              </SegmentedControl>
+              {langSwitch}
             </HStack>
             <Text type="supporting" color="secondary">
-              {s.subtitle} Live from /api/stats, refreshes every 3s.
+              {s.subtitle} {s.liveNote}
             </Text>
-            <KpiRow stats={stats} />
+            <KpiRow stats={stats} lang={lang} />
             <HStack gap={3}>
               <StackItem size="fill">
-                <TierChart stats={stats} />
+                <TierChart stats={stats} lang={lang} />
               </StackItem>
               <StackItem size="fill">
-                <SexChart stats={stats} />
+                <SexChart stats={stats} lang={lang} />
               </StackItem>
             </HStack>
-            <AgeChart stats={stats} />
+            <AgeChart stats={stats} lang={lang} />
           </VStack>
         </LayoutContent>
       )}
@@ -781,27 +800,14 @@ export default function Page() {
       {view === 'settings' && (
         <LayoutContent padding={4}>
           <VStack gap={4}>
-            <Heading level={1}>Display settings</Heading>
+            <Heading level={1}>{s.displaySettings}</Heading>
             <Text type="body" color="secondary">
-              Dashboard language and stats panel visibility.
+              {s.displayNote}
             </Text>
             <HStack gap={3} vAlign="center">
-              <SegmentedControl
-                label={s.language}
-                value={lang}
-                onChange={v => {
-                  setLang(v as UiLang);
-                  try {
-                    localStorage.setItem(LANG_KEY, v);
-                  } catch {}
-                }}
-                size="sm">
-                {(Object.keys(UI_LANGS) as UiLang[]).map(l => (
-                  <SegmentedControlItem key={l} label={UI_LANGS[l]} value={l} />
-                ))}
-              </SegmentedControl>
+              {langSwitch}
               <Button
-                label={sideCollapsed ? 'Show stats panel' : 'Hide stats panel'}
+                label={sideCollapsed ? s.showStatsPanel : s.hideStatsPanel}
                 variant="secondary"
                 size="sm"
                 onClick={() => setSideCollapsed(v => !v)}
